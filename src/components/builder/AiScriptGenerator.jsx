@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Sparkles, Loader2, RefreshCw } from 'lucide-react'
+import { Sparkles, Loader2, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { base44 } from '@/api/base44Client'
@@ -7,23 +7,136 @@ import { base44 } from '@/api/base44Client'
 const HYPERFY_CONTEXT = `Tu es un expert du scripting Hyperfy V2.
 Hyperfy est un moteur de monde virtuel 3D. Les apps Hyperfy sont des scripts JavaScript qui s'exécutent dans le runtime Hyperfy.
 
-Règles importantes du runtime Hyperfy :
-- L'objet global principal est \`app\` (représente l'entité 3D dans la scène)
-- \`world\` donne accès au monde (joueurs, etc.)
-- \`app.on('update', delta => { ... })\` pour la boucle d'animation (delta en secondes)
-- \`app.position\`, \`app.rotation\`, \`app.scale\` pour transformer l'objet
-- Pour créer des actions cliquables : \`const action = app.create('action'); action.label = '...'; action.distance = 2; action.onTrigger = () => {...}; app.add(action)\`
-- Pour afficher du texte 3D : \`const text = app.create('text'); text.value = '...'; app.add(text)\`
-- Pour jouer un son : \`const audio = app.create('audio'); audio.src = 'asset://...'; app.add(audio)\`
-- Pour afficher une image/vidéo/iframe : \`const ui = app.create('ui'); ui.width = 1; ui.height = 0.5625; ...\` — utilise app.create('video') pour les vidéos avec une prop \`src\` (URL), et pour les iframes/sites web utilise app.create('iframe') avec \`src\` (URL)
-- Pour les iframes/web : \`const iframe = app.create('iframe'); iframe.src = url; iframe.width = 1920; iframe.height = 1080; app.add(iframe)\`
-- Pour les vidéos YouTube et streaming : préfère app.create('iframe') avec l'URL YouTube embed (https://www.youtube.com/embed/VIDEO_ID?autoplay=1)
-- \`props\` contient les paramètres configurables de l'app (définis dans blueprint.props). Utilise \`props.nomDuChamp\` pour y accéder.
-- Les props sont définies dans le blueprint et accessibles via props. Ex: si l'utilisateur veut configurer une URL, utilise \`props.url\` dans le script.
-- Pas d'import, pas de require, pas de module ES. Tout est global.
-- Le script s'exécute dans un contexte sandboxé, sans accès au DOM, window, document.
+=== RÈGLES STRICTES DU RUNTIME HYPERFY ===
 
-Génère UNIQUEMENT le code JavaScript du script, sans markdown, sans explication, sans \`\`\`javascript. Juste le code brut.`
+GLOBAL DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, setInterval, clearTimeout, clearInterval
+
+app = l'entité racine de l'app dans la scène.
+  app.position.x / .y / .z — position dans le monde
+  app.rotation.x / .y / .z — rotation (radians)
+  app.scale.x / .y / .z — échelle
+  app.add(node) — ajoute un nœud enfant
+  app.remove(node) — retire un nœud
+  app.on('update', delta => {...}) — boucle de rendu (delta en secondes)
+  app.on('fixedUpdate', delta => {...}) — physique fixe
+  app.configure([...fields]) — déclare les champs éditables dans l'UI Hyperfy
+
+props = objet contenant les valeurs des champs configurés via app.configure()
+  Toujours lire via props.monChamp (pas de déstructuration)
+
+world.getPlayer() — retourne le joueur local
+world.on('join', player => {...}) — joueur rejoint
+world.on('leave', player => {...}) — joueur quitte
+
+=== NODES DISPONIBLES (app.create('nom')) ===
+Seuls ces nodes existent. N'utilise JAMAIS d'autres noms.
+
+'action' — bouton d'interaction cliquable
+  .label (string) — texte affiché
+  .distance (number) — distance de déclenchement
+  .duration (number) — durée de maintien (0 = instantané)
+  .onTrigger = () => {} — callback au déclenchement
+  .onStart = () => {} — callback au début de maintien
+  .onCancel = () => {} — callback si annulé
+  → Doit être ajouté avec app.add(action)
+
+'video' — écran vidéo 3D (MP4 direct uniquement, PAS YouTube embed ni iframe)
+  .src (string) — URL directe du fichier MP4
+  .width (number) — largeur en mètres
+  .height (number) — hauteur en mètres
+  .aspect (number) — ratio (défaut 16/9)
+  .loop (boolean)
+  .volume (number, 0-1)
+  .play() / .pause() / .stop()
+  → Pour YouTube : impossible nativement. Conseille d'utiliser une URL MP4 directe.
+
+'image' — image 3D plane
+  .src (string) — URL de l'image (https:// ou asset://)
+  .width (number)
+  .height (number)
+  .fit ('none'|'cover'|'contain')
+  .color (string) — couleur de fond
+
+'audio' — son 3D ou ambiant
+  .src (string) — URL MP3/OGG
+  .loop (boolean)
+  .volume (number)
+  .spatial (boolean)
+  .play() / .pause() / .stop()
+
+'mesh' — maillage 3D primitif
+  .type ('box'|'sphere'|'cylinder'|'plane'|'capsule')
+  .width / .height / .depth (number)
+  .color (string hex ou 'transparent')
+  .castShadow / .receiveShadow (boolean)
+
+'collider' — collision physique
+  .type ('box'|'sphere'|'capsule'|'geometry')
+  .width / .height / .depth (number)
+  .trigger (boolean) — zone sans friction (trigger volume)
+
+'rigidbody' — corps physique
+  .type ('dynamic'|'static'|'kinematic')
+  Enfants colliders et meshes s'y attachent
+
+'group' — conteneur/pivot
+  Permet de grouper des nœuds et les transformer ensemble
+
+'anchor' — point d'ancrage pour avatars
+  .position.x/y/z
+
+'particles' — système de particules
+  .src (string) — URL fichier particules
+
+'lod' — Level of Detail
+  Contient des enfants affichés selon la distance
+
+IMPORTANT — ce qui N'EXISTE PAS dans Hyperfy :
+  ❌ app.create('iframe') — n'existe pas
+  ❌ app.create('text') — n'existe pas
+  ❌ app.create('ui') — n'existe pas
+  ❌ app.create('plane') — utilise mesh avec type 'plane'
+  ❌ app.traverse() — n'existe pas
+  ❌ app.configure() n'est pas un setter de paramètres, c'est la déclaration UI
+
+=== app.configure() ===
+Permet de définir des champs éditables dans l'interface Hyperfy.
+Exemple :
+  app.configure([
+    { type: 'text', key: 'url', label: 'URL vidéo', initial: 'https://...' },
+    { type: 'number', key: 'speed', label: 'Vitesse', initial: 1 },
+    { type: 'boolean', key: 'loop', label: 'Boucle', initial: true },
+  ])
+  // Puis lire avec props.url, props.speed, props.loop
+
+Types disponibles dans configure : 'text', 'number', 'boolean', 'select'
+Pour 'select' : ajouter options: [{label:'A',value:'a'},{label:'B',value:'b'}]
+
+=== EXEMPLE COMPLET — écran vidéo ===
+app.configure([
+  { type: 'text', key: 'src', label: 'URL vidéo MP4', initial: '' },
+  { type: 'boolean', key: 'loop', label: 'Boucle', initial: true },
+])
+
+const screen = app.create('video')
+screen.src = props.src || ''
+screen.width = 4
+screen.height = 2.25
+screen.aspect = 16 / 9
+screen.loop = props.loop ?? true
+app.add(screen)
+
+=== EXEMPLE COMPLET — rotation continue ===
+app.on('update', delta => {
+  app.rotation.y += 1.0 * delta
+})
+
+=== RÈGLES DE GÉNÉRATION ===
+- Génère UNIQUEMENT du code JavaScript brut. Pas de markdown, pas de \`\`\`, pas d'explication.
+- Première ligne OPTIONNELLE : // PROPS: {"key": "defaultValue"} pour les champs configurables (legacy, préfère app.configure())
+- N'utilise QUE les nodes et APIs listés ci-dessus.
+- Si la demande est impossible (ex: iframe YouTube), génère le script le plus proche possible et ajoute un commentaire // NOTE: expliquant la limitation.
+- Pas d'import, pas de require, pas de module ES.`
 
 export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated }) {
   const [prompt, setPrompt] = useState('')
@@ -36,17 +149,15 @@ export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated 
       const result = await base44.integrations.Core.InvokeLLM({
         prompt: `${HYPERFY_CONTEXT}
 
-Description de l'app à créer :
+=== DEMANDE ===
 ${prompt}
 
-Génère le script Hyperfy index.js complet pour cette app. Si l'app nécessite des paramètres configurables (comme une URL, une couleur, un texte, une vitesse...), utilise \`props.nomDuChamp\` dans le script.
-Aussi, retourne les props nécessaires dans un commentaire en première ligne sous la forme: // PROPS: {"nomDuChamp": "valeurDefaut", ...}
-
-Exemple pour une app avec une URL :
-// PROPS: {"url": "https://example.com"}
-const iframe = app.create('iframe')
-iframe.src = props.url || 'https://example.com'
-...`,
+Génère le script Hyperfy index.js complet.
+- Utilise app.configure([...]) pour déclarer les champs configurables (URL, vitesse, etc.)
+- Lis les valeurs avec props.xxx
+- Si des props configurables existent, ajoute aussi en première ligne : // PROPS: {"key": "defaultValue"} (pour l'UI du builder)
+- N'utilise QUE les nodes et APIs documentés ci-dessus.
+- Code JavaScript brut uniquement, aucun markdown.`,
         model: 'claude_sonnet_4_6',
       })
 
@@ -99,6 +210,14 @@ Ex : Une app qui affiche un site web ou une vidéo YouTube dans le monde. Il fau
           L'IA analyse ta description et écrit le script Hyperfy…
         </p>
       )}
+
+      <div className="rounded-lg border border-border/60 bg-secondary/20 p-3 flex gap-2.5 text-xs text-muted-foreground">
+        <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary/70" />
+        <div className="leading-relaxed space-y-1">
+          <p><strong className="text-foreground">Nodes disponibles :</strong> action, video, image, audio, mesh, collider, rigidbody, group, anchor, particles</p>
+          <p><strong className="text-foreground">Limitation :</strong> Hyperfy ne supporte pas les iframes. Pour les vidéos, seules les URLs MP4 directes fonctionnent (pas YouTube embed). L'IA en sera informée.</p>
+        </div>
+      </div>
     </div>
   )
 }
