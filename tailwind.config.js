@@ -61,6 +61,10 @@ module.exports = {
   				ring: 'hsl(var(--sidebar-ring))'
   			}
   		},
+  		fontFamily: {
+  			grotesk: ['var(--font-grotesk)'],
+  			mono: ['var(--font-mono)']
+  		},
   		keyframes: {
   			'accordion-down': {
   				from: {

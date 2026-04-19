@@ -1,0 +1,47 @@
+{
+  "name": "HypApp",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Nom de l'app Hyperfy"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description de l'app"
+    },
+    "author": {
+      "type": "string",
+      "description": "Auteur de l'app"
+    },
+    "image_url": {
+      "type": "string",
+      "description": "URL de l'image de preview"
+    },
+    "model_url": {
+      "type": "string",
+      "description": "URL du mod\u00e8le .glb/.vrm upload\u00e9"
+    },
+    "model_filename": {
+      "type": "string",
+      "description": "Nom original du fichier mod\u00e8le"
+    },
+    "effect_id": {
+      "type": "string",
+      "description": "Identifiant de l'effet choisi"
+    },
+    "effect_params": {
+      "type": "object",
+      "description": "Param\u00e8tres de l'effet",
+      "additionalProperties": true
+    },
+    "custom_script": {
+      "type": "string",
+      "description": "Script JS personnalis\u00e9 si effect_id = custom"
+    }
+  },
+  "required": [
+    "name",
+    "effect_id"
+  ]
+}
