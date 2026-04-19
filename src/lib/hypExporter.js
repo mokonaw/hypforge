@@ -53,8 +53,9 @@ function mimeFor(ext) {
  * @param {string} [opts.description]
  * @param {string} [opts.author]
  * @param {File}   [opts.modelFile]  Optional .glb / .vrm
- * @param {Object} opts.effect       One of EFFECTS
- * @param {Object} opts.effectParams Current parameter values (become app props)
+ * @param {File}   [opts.scriptFile] Pre-built script File (takes priority over effect)
+ * @param {Object} [opts.effect]     One of EFFECTS (used if no scriptFile)
+ * @param {Object} [opts.effectParams] Params for the effect
  * @param {string} [opts.customScript] Used when effect.id === 'custom'
  * @returns {Promise<File>} the .hyp file, ready to download
  */
@@ -63,6 +64,7 @@ export async function buildHypFile({
   description,
   author,
   modelFile,
+  scriptFile: providedScriptFile,
   effect,
   effectParams,
   customScript,
@@ -83,9 +85,14 @@ export async function buildHypFile({
   }
 
   // --- Script ---
-  const scriptSource = buildScript(effect, effectParams, { customScript })
-  const scriptBlob = new Blob([scriptSource], { type: 'application/javascript' })
-  const scriptFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
+  let scriptFile
+  if (providedScriptFile) {
+    scriptFile = providedScriptFile
+  } else {
+    const scriptSource = buildScript(effect, effectParams, { customScript })
+    const scriptBlob = new Blob([scriptSource], { type: 'application/javascript' })
+    scriptFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
+  }
   const scriptUrl = `asset://${hexId()}.js`
   assets.push({ type: 'script', url: scriptUrl, file: scriptFile })
 
