@@ -7,136 +7,181 @@ import { base44 } from '@/api/base44Client'
 const HYPERFY_CONTEXT = `Tu es un expert du scripting Hyperfy V2.
 Hyperfy est un moteur de monde virtuel 3D. Les apps Hyperfy sont des scripts JavaScript qui s'exécutent dans le runtime Hyperfy.
 
-=== RÈGLES STRICTES DU RUNTIME HYPERFY ===
+=== RÈGLES STRICTES DU RUNTIME HYPERFY V2 ===
 
-GLOBAL DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, setInterval, clearTimeout, clearInterval
+GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, setInterval, clearTimeout, clearInterval
 
-app = l'entité racine de l'app dans la scène.
-  app.position.x / .y / .z — position dans le monde
-  app.rotation.x / .y / .z — rotation (radians)
-  app.scale.x / .y / .z — échelle
+--- app ---
+  app.position.set(x, y, z) — ou app.position.x = ...
+  app.rotation.set(x, y, z) — rotation en radians
+  app.scale.set(x, y, z)
   app.add(node) — ajoute un nœud enfant
   app.remove(node) — retire un nœud
+  app.get('NomNode') — récupère un nœud enfant par son nom (ex: nœud GLB nommé dans Blender)
   app.on('update', delta => {...}) — boucle de rendu (delta en secondes)
   app.on('fixedUpdate', delta => {...}) — physique fixe
-  app.configure([...fields]) — déclare les champs éditables dans l'UI Hyperfy
+  app.configure([...fields]) — déclare les champs éditables dans l'UI Hyperfy (TOUJOURS en premier dans le script)
 
-props = objet contenant les valeurs des champs configurés via app.configure()
-  Toujours lire via props.monChamp (pas de déstructuration)
+--- props ---
+  props = valeurs des champs définis par app.configure()
+  Lire avec props.monChamp — JAMAIS de déstructuration
 
-world.getPlayer() — retourne le joueur local
-world.on('join', player => {...}) — joueur rejoint
-world.on('leave', player => {...}) — joueur quitte
+--- world ---
+  world.isClient — boolean, true si exécuté côté navigateur
+  world.isServer — boolean
+  world.open(url, newTab) — ouvre une URL (newTab = true pour nouvel onglet)
+  world.getPlayer() — retourne le joueur local
+  world.on('join', player => {...}) — joueur rejoint
+  world.on('leave', player => {...}) — joueur quitte
 
-=== NODES DISPONIBLES (app.create('nom')) ===
-Seuls ces nodes existent. N'utilise JAMAIS d'autres noms.
+=== NODES DISPONIBLES via app.create('nom') ===
 
-'action' — bouton d'interaction cliquable
-  .label (string) — texte affiché
-  .distance (number) — distance de déclenchement
-  .duration (number) — durée de maintien (0 = instantané)
-  .onTrigger = () => {} — callback au déclenchement
-  .onStart = () => {} — callback au début de maintien
-  .onCancel = () => {} — callback si annulé
-  → Doit être ajouté avec app.add(action)
+--- 'action' — interaction cliquable ---
+  .label (string)
+  .distance (number, défaut 3)
+  .duration (number, 0 = instantané, 0.5 = maintien)
+  .onTrigger = () => {}
+  .onStart = () => {}
+  .onCancel = () => {}
+  .position.set(x, y, z) — positionner l'action dans la scène
+  app.add(action)
 
-'video' — écran vidéo 3D (MP4 direct uniquement, PAS YouTube embed ni iframe)
-  .src (string) — URL directe du fichier MP4
-  .width (number) — largeur en mètres
-  .height (number) — hauteur en mètres
-  .aspect (number) — ratio (défaut 16/9)
-  .loop (boolean)
-  .volume (number, 0-1)
-  .play() / .pause() / .stop()
-  → Pour YouTube : impossible nativement. Conseille d'utiliser une URL MP4 directe.
+--- 'ui' — interface utilisateur en espace monde ---
+  Créer: app.create('ui', { space: 'world', width: 350, height: 140, size: 0.01, backgroundColor: 'rgba(0,0,0,0)', borderRadius: 10, padding: 10 })
+  .position.set(x, y, z)
+  .add(uiview) — ajouter des enfants UI
+  app.add(ui)
 
-'image' — image 3D plane
-  .src (string) — URL de l'image (https:// ou asset://)
-  .width (number)
-  .height (number)
+--- 'uiview' — conteneur layout dans un 'ui' ---
+  Créer: app.create('uiview', { flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 8, padding: 0 })
+  .add(child) — ajouter uitext, uiimage, uiview enfants
+
+--- 'uitext' — texte dans un 'ui' ---
+  Créer: app.create('uitext', { value: 'Mon texte', fontSize: 24, color: 'white', textAlign: 'center' })
+
+--- 'uiimage' — image dans un 'ui' ---
+  Créer: app.create('uiimage', { src: 'https://...', width: 240, height: 148, objectFit: 'contain', borderRadius: 8 })
+  Pour les assets uploadés: src = props.imageFile.url.replace('asset://', '/assets/')
+
+--- 'image' — image 3D plane dans le monde ---
+  .src (string URL)
+  .width / .height (number, mètres)
   .fit ('none'|'cover'|'contain')
-  .color (string) — couleur de fond
+  app.add(image)
 
-'audio' — son 3D ou ambiant
-  .src (string) — URL MP3/OGG
+--- 'video' — écran vidéo 3D (MP4 direct uniquement) ---
+  .src (string, URL MP4 directe — PAS YouTube embed)
+  .width / .height (number)
+  .aspect (number, défaut 16/9)
+  .loop (boolean)
+  .volume (number 0-1)
+  .play() / .pause() / .stop()
+  app.add(video)
+
+--- 'audio' — son 3D ---
+  .src (string URL MP3/OGG)
   .loop (boolean)
   .volume (number)
   .spatial (boolean)
   .play() / .pause() / .stop()
+  app.add(audio)
 
-'mesh' — maillage 3D primitif
+--- 'mesh' — primitif 3D ---
   .type ('box'|'sphere'|'cylinder'|'plane'|'capsule')
   .width / .height / .depth (number)
-  .color (string hex ou 'transparent')
+  .color (string hex)
   .castShadow / .receiveShadow (boolean)
+  app.add(mesh)
 
-'collider' — collision physique
+--- 'collider' — collision ---
   .type ('box'|'sphere'|'capsule'|'geometry')
   .width / .height / .depth (number)
-  .trigger (boolean) — zone sans friction (trigger volume)
+  .trigger (boolean)
+  app.add(collider)
 
-'rigidbody' — corps physique
+--- 'rigidbody' — physique ---
   .type ('dynamic'|'static'|'kinematic')
-  Enfants colliders et meshes s'y attachent
+  app.add(rigidbody)
 
-'group' — conteneur/pivot
-  Permet de grouper des nœuds et les transformer ensemble
+--- 'group' — conteneur/pivot ---
+  .position.set(x,y,z)
+  .add(child)
+  app.add(group)
 
-'anchor' — point d'ancrage pour avatars
-  .position.x/y/z
+--- 'anchor' / 'particles' / 'lod' — usages avancés ---
 
-'particles' — système de particules
-  .src (string) — URL fichier particules
+=== CHAMPS app.configure() ===
+Types disponibles :
+  { type: 'text', key, label, initial }
+  { type: 'textarea', key, label, placeholder, initial }
+  { type: 'number', key, label, initial }
+  { type: 'range', key, label, min, max, step, initial }
+  { type: 'toggle', key, label, trueLabel, falseLabel, initial }
+  { type: 'select', key, label, options: [{label,value}], initial }
+  { type: 'file', key, label, kind: 'texture'|'model'|'audio' }
 
-'lod' — Level of Detail
-  Contient des enfants affichés selon la distance
-
-IMPORTANT — ce qui N'EXISTE PAS dans Hyperfy :
-  ❌ app.create('iframe') — n'existe pas
-  ❌ app.create('text') — n'existe pas
-  ❌ app.create('ui') — n'existe pas
-  ❌ app.create('plane') — utilise mesh avec type 'plane'
-  ❌ app.traverse() — n'existe pas
-  ❌ app.configure() n'est pas un setter de paramètres, c'est la déclaration UI
-
-=== app.configure() ===
-Permet de définir des champs éditables dans l'interface Hyperfy.
-Exemple :
-  app.configure([
-    { type: 'text', key: 'url', label: 'URL vidéo', initial: 'https://...' },
-    { type: 'number', key: 'speed', label: 'Vitesse', initial: 1 },
-    { type: 'boolean', key: 'loop', label: 'Boucle', initial: true },
-  ])
-  // Puis lire avec props.url, props.speed, props.loop
-
-Types disponibles dans configure : 'text', 'number', 'boolean', 'select'
-Pour 'select' : ajouter options: [{label:'A',value:'a'},{label:'B',value:'b'}]
-
-=== EXEMPLE COMPLET — écran vidéo ===
+=== EXEMPLE — image cliquable avec lien ===
 app.configure([
-  { type: 'text', key: 'src', label: 'URL vidéo MP4', initial: '' },
-  { type: 'boolean', key: 'loop', label: 'Boucle', initial: true },
+  { type: 'textarea', key: 'url', label: 'URL', initial: 'https://example.com' },
+  { type: 'text', key: 'displayText', label: 'Texte affiché', initial: 'Visiter' },
+  { type: 'file', key: 'imageFile', label: 'Image', kind: 'texture' },
+  { type: 'range', key: 'posY', label: 'Position Y', min: 0, max: 5, step: 0.1, initial: 2.2 },
+  { type: 'toggle', key: 'visible', label: 'Visible', trueLabel: 'Oui', falseLabel: 'Non', initial: true },
 ])
 
-const screen = app.create('video')
-screen.src = props.src || ''
-screen.width = 4
-screen.height = 2.25
-screen.aspect = 16 / 9
-screen.loop = props.loop ?? true
-app.add(screen)
+const ui = app.create('ui', {
+  space: 'world', width: 350, height: 180, size: 0.01,
+  backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, padding: 10,
+})
+ui.position.set(0, props.posY || 2.2, 0)
 
-=== EXEMPLE COMPLET — rotation continue ===
+const container = app.create('uiview', {
+  flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 8,
+})
+
+if (props.imageFile && props.imageFile.url) {
+  const img = app.create('uiimage', {
+    src: props.imageFile.url.replace('asset://', '/assets/'),
+    width: 240, height: 148, objectFit: 'contain', borderRadius: 8,
+  })
+  container.add(img)
+}
+
+const label = (props.displayText && props.displayText.trim()) ? props.displayText.trim() : (props.url || '')
+const txt = app.create('uitext', { value: label, fontSize: 22, color: 'white', textAlign: 'center' })
+container.add(txt)
+ui.add(container)
+
+const action = app.create('action', {
+  label: 'Ouvrir', distance: 2, duration: 0.5,
+  onTrigger: () => {
+    if (props.url && world.isClient) world.open(props.url, true)
+  },
+})
+action.position.set(0, 1.7, 0)
+
+app.add(ui)
+app.add(action)
+
+=== EXEMPLE — rotation continue ===
 app.on('update', delta => {
   app.rotation.y += 1.0 * delta
 })
 
+=== CE QUI N'EXISTE PAS — NE JAMAIS UTILISER ===
+  ❌ app.create('iframe')
+  ❌ app.create('text') — utilise 'uitext' dans un 'ui'
+  ❌ app.create('plane') — utilise mesh { type: 'plane' }
+  ❌ app.traverse()
+  ❌ world.open() sans vérifier world.isClient
+
 === RÈGLES DE GÉNÉRATION ===
-- Génère UNIQUEMENT du code JavaScript brut. Pas de markdown, pas de \`\`\`, pas d'explication.
-- Première ligne OPTIONNELLE : // PROPS: {"key": "defaultValue"} pour les champs configurables (legacy, préfère app.configure())
-- N'utilise QUE les nodes et APIs listés ci-dessus.
-- Si la demande est impossible (ex: iframe YouTube), génère le script le plus proche possible et ajoute un commentaire // NOTE: expliquant la limitation.
-- Pas d'import, pas de require, pas de module ES.`
+- Code JavaScript brut uniquement. Zéro markdown, zéro \`\`\`, zéro explication.
+- app.configure([...]) TOUJOURS en premier si des props sont nécessaires.
+- Première ligne optionnelle : // PROPS: {"key": "defaultValue"} pour l'UI du builder.
+- N'utilise QUE les nodes et APIs documentés ci-dessus.
+- Pas d'import, pas de require, pas de module ES.
+- Pour ouvrir des liens : toujours vérifier world.isClient avant world.open().`
 
 export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated }) {
   const [prompt, setPrompt] = useState('')
@@ -214,8 +259,9 @@ Ex : Une app qui affiche un site web ou une vidéo YouTube dans le monde. Il fau
       <div className="rounded-lg border border-border/60 bg-secondary/20 p-3 flex gap-2.5 text-xs text-muted-foreground">
         <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary/70" />
         <div className="leading-relaxed space-y-1">
-          <p><strong className="text-foreground">Nodes disponibles :</strong> action, video, image, audio, mesh, collider, rigidbody, group, anchor, particles</p>
-          <p><strong className="text-foreground">Limitation :</strong> Hyperfy ne supporte pas les iframes. Pour les vidéos, seules les URLs MP4 directes fonctionnent (pas YouTube embed). L'IA en sera informée.</p>
+          <p><strong className="text-foreground">Nodes 3D :</strong> action, video, image, audio, mesh, collider, rigidbody, group, anchor, particles</p>
+          <p><strong className="text-foreground">Nodes UI monde :</strong> ui, uiview, uitext, uiimage — pour afficher du texte et des images en overlay dans la scène</p>
+          <p><strong className="text-foreground">Liens externes :</strong> <code className="text-foreground">world.open(url, true)</code> pour ouvrir dans un nouvel onglet. Les vidéos nécessitent une URL MP4 directe (pas YouTube).</p>
         </div>
       </div>
     </div>
