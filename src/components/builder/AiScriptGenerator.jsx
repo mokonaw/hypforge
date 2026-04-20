@@ -229,7 +229,12 @@ Génère le script Hyperfy index.js complet.
         onPropsGenerated(propsData)
       }
     } catch (e) {
-      setError(e?.message || 'Erreur inconnue')
+      const msg = e?.message || ''
+      if (msg.includes('limit of integrations')) {
+        setError('Limite mensuelle d\'intégrations IA atteinte. Merci d\'upgrader ton plan Base44 pour continuer à générer des scripts.')
+      } else {
+        setError(msg || 'Erreur inconnue')
+      }
     } finally {
       setLoading(false)
     }
