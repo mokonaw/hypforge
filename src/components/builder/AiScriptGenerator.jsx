@@ -181,7 +181,10 @@ app.on('update', delta => {
 - Première ligne optionnelle : // PROPS: {"key": "defaultValue"} pour l'UI du builder.
 - N'utilise QUE les nodes et APIs documentés ci-dessus.
 - Pas d'import, pas de require, pas de module ES.
-- Pour ouvrir des liens : toujours vérifier world.isClient avant world.open().`
+- Pour ouvrir des liens : toujours vérifier world.isClient avant world.open().
+- TOUJOURS masquer le cube placeholder par défaut en ajoutant ces lignes juste après app.configure() :
+    const block = app.get('Block')
+    if (block) block.active = false`
 
 export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated }) {
   const [prompt, setPrompt] = useState('')
