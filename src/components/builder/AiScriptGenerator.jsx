@@ -189,10 +189,12 @@ app.on('update', delta => {
 export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated }) {
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const generate = async () => {
     if (!prompt.trim()) return
     setLoading(true)
+    setError(null)
     try {
       const result = await base44.integrations.Core.InvokeLLM({
         prompt: `${HYPERFY_CONTEXT}
@@ -227,7 +229,7 @@ Génère le script Hyperfy index.js complet.
         onPropsGenerated(propsData)
       }
     } catch (e) {
-      console.error(e)
+      setError(e?.message || 'Erreur inconnue')
     } finally {
       setLoading(false)
     }
@@ -253,6 +255,11 @@ Ex : Une app qui affiche un site web ou une vidéo YouTube dans le monde. Il fau
           : <><Sparkles className="w-4 h-4 mr-2" />Générer le script avec l'IA</>
         }
       </Button>
+      {error && (
+        <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">
+          ⚠️ {error}
+        </p>
+      )}
       {loading && (
         <p className="text-xs text-muted-foreground text-center animate-pulse">
           L'IA analyse ta description et écrit le script Hyperfy…
