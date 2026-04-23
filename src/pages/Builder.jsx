@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Download, Save, Loader2, FileCode2, Sparkles, Settings, Wand2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Download, Save, Loader2, FileCode2, Sparkles, Settings, Wand2, ChevronDown, ChevronUp, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { base44 } from '@/api/base44Client'
@@ -10,6 +10,7 @@ import ModelUploader from '@/components/builder/ModelUploader'
 import ScriptPreview from '@/components/builder/ScriptPreview'
 import AiScriptGenerator from '@/components/builder/AiScriptGenerator'
 import PropsEditor from '@/components/builder/PropsEditor'
+import ScriptVisualizer from '@/components/builder/ScriptVisualizer'
 
 import { buildHypFile, downloadFile } from '@/lib/hypExporter'
 
@@ -49,6 +50,7 @@ export default function Builder() {
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [showVisualizer, setShowVisualizer] = useState(false)
 
   // Load existing app if ?id=...
   useEffect(() => {
@@ -171,6 +173,10 @@ export default function Builder() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setShowVisualizer(true)} disabled={script === EMPTY_SCRIPT}>
+            <Eye className="w-4 h-4 mr-2" />
+            Aperçu
+          </Button>
           <Button variant="outline" onClick={doSave} disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             Sauvegarder
@@ -258,6 +264,11 @@ export default function Builder() {
           </div>
         </aside>
       </div>
+    </div>
+
+      {showVisualizer && (
+        <ScriptVisualizer script={script} onClose={() => setShowVisualizer(false)} />
+      )}
     </div>
   )
 }
