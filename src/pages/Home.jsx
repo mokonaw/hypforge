@@ -27,7 +27,7 @@ export default function Home() {
               <span className="text-gradient">pour Hyperfy</span>
               <span className="text-muted-foreground">.</span>
             </h1>
-            <p className="mt-6 text-lg md:text-xl text-muted-foreground max-w-2xl">Configure ses paramètres, optionnellement attache un modèle 3D — et exporte un fichier .hyp prêt à être importé dans ton monde virtuel.
+            <p className="mt-6 text-lg md:text-xl text-muted-foreground max-w-2xl">Configure ses paramètres, optionnellement attache un modèle 3D — et exporte un fichier .hyp prêt à être importé dans ton monde virtuel!
 
 
             </p>
