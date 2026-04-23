@@ -1,8 +1,8 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { base44 } from '@/api/base44Client'
-import { Plus, Download, Pencil, Trash2, Loader2, Boxes } from 'lucide-react'
+import { Plus, Download, Pencil, Trash2, Loader2, Boxes, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { getEffect } from '@/lib/effects'
@@ -18,6 +18,8 @@ async function fetchModelFile(url, filename) {
 export default function MyApps() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [search, setSearch] = useState('')
+
   const { data: apps, isLoading } = useQuery({
     queryKey: ['hypapps'],
     queryFn: () => base44.entities.HypApp.list('-updated_date', 100),
@@ -67,6 +69,18 @@ export default function MyApps() {
         </Button>
       </div>
 
+      {/* Search bar */}
+      <div className="relative mb-6 max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Rechercher une app…"
+          className="w-full pl-9 pr-4 py-2 rounded-xl border border-border/60 bg-card/40 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+        />
+      </div>
+
       {isLoading ? (
         <div className="py-20 grid place-items-center">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -85,7 +99,7 @@ export default function MyApps() {
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {apps.map(app => {
+          {apps.filter(app => app.name.toLowerCase().includes(search.toLowerCase())).map(app => {
             const effect = getEffect(app.effect_id)
             return (
               <div key={app.id} className="group rounded-2xl border border-border/60 bg-card/40 p-5 flex flex-col gap-4 hover:border-primary/40 transition-colors">
