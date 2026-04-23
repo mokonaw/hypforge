@@ -186,10 +186,10 @@ app.on('update', delta => {
     const block = app.get('Block')
     if (block) block.active = false`
 
-export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated }) {
-  const [prompt, setPrompt] = useState('')
+export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated, prompt, onPromptChange }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+
 
   const generate = async () => {
     if (!prompt.trim()) return
@@ -244,7 +244,7 @@ Génère le script Hyperfy index.js complet.
     <div className="space-y-3">
       <Textarea
         value={prompt}
-        onChange={e => setPrompt(e.target.value)}
+        onChange={e => onPromptChange(e.target.value)}
         placeholder="Décris ce que tu veux créer…
 Ex : Une app qui affiche un site web ou une vidéo YouTube dans le monde. Il faut pouvoir configurer l'URL. Afficher en grand devant le joueur."
         rows={5}

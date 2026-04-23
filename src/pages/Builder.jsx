@@ -43,6 +43,7 @@ export default function Builder() {
   const [meta, setMeta] = useState({ name: '', description: '', author: '' })
   const [modelFile, setModelFile] = useState(null)
   const [script, setScript] = useState(EMPTY_SCRIPT)
+  const [aiPrompt, setAiPrompt] = useState('')
   const [propsSchema, setPropsSchema] = useState({})   // { key: defaultValue }
   const [propsValues, setPropsValues] = useState({})   // { key: currentValue }
   const [busy, setBusy] = useState(false)
@@ -56,6 +57,7 @@ export default function Builder() {
       const saved = apps.find(a => a.id === loadId)
       if (!saved) return
       setMeta({ name: saved.name || '', description: saved.description || '', author: saved.author || '' })
+      if (saved.ai_prompt) setAiPrompt(saved.ai_prompt)
       if (saved.custom_script) setScript(saved.custom_script)
       if (saved.effect_params) {
         setPropsSchema(saved.effect_params)
@@ -137,6 +139,7 @@ export default function Builder() {
         effect_id: 'custom',
         effect_params: propsSchema,
         custom_script: script,
+        ai_prompt: aiPrompt,
       }
       if (loadId) {
         await base44.entities.HypApp.update(loadId, payload)
@@ -196,6 +199,8 @@ export default function Builder() {
             <AiScriptGenerator
               onScriptGenerated={handleScriptGenerated}
               onPropsGenerated={handlePropsGenerated}
+              prompt={aiPrompt}
+              onPromptChange={setAiPrompt}
             />
           </Section>
 
