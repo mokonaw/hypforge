@@ -264,7 +264,6 @@ export default function Builder() {
           </div>
         </aside>
       </div>
-    </div>
 
       {showVisualizer && (
         <ScriptVisualizer script={script} onClose={() => setShowVisualizer(false)} />
