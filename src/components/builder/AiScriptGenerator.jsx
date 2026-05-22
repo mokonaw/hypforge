@@ -26,9 +26,10 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   app.configure([...fields]) — déclare les champs éditables dans l'UI Hyperfy (TOUJOURS en premier dans le script)
   app.onDispose = () => {...} — nettoyage quand l'app est détruite (supprimer DOM, nodes, etc.)
 
---- props ---
-  props = valeurs des champs définis par app.configure()
-  Lire avec props.monChamp — JAMAIS de déstructuration
+--- props / config ---
+  props (alias: config) = valeurs des champs définis par app.configure()
+  Les deux noms fonctionnent : props.monChamp ET config.monChamp sont équivalents
+  Lire avec props.monChamp ou config.monChamp — JAMAIS de déstructuration
   props.onChange(() => applyAll()) — callback appelé à chaque changement de props dans l'UI Hyperfy
 
 --- world ---
@@ -222,7 +223,7 @@ app.on('update', delta => {
 - Utiliser app.onDispose pour nettoyer les nodes et effets de bord.
 - TOUJOURS masquer le cube placeholder par défaut en ajoutant ces lignes juste après app.configure() :
     const block = app.get('Block')
-    if (block) block.active = false`
+    app.remove(block)   ← variante directe, ou : if (block) block.active = false`
 
 export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated, prompt, onPromptChange }) {
   const [loading, setLoading] = useState(false)
