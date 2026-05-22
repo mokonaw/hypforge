@@ -204,6 +204,10 @@ export default function Builder() {
 
           {/* Step 2 — AI Generation */}
           <Section step="02" title="Décris ton app" icon={Sparkles}>
+            <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+              Tu peux décrire ton app en français ou en anglais — les deux fonctionnent très bien.<br />
+              <span className="text-muted-foreground/60">You can describe your app in French or English — both work great.</span>
+            </p>
             <AiScriptGenerator
               onScriptGenerated={handleScriptGenerated}
               onPropsGenerated={handlePropsGenerated}
