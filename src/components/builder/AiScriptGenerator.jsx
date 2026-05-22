@@ -273,6 +273,26 @@ if (props && typeof props.onChange === 'function') {
   props.onChange(() => applyAll())
 }
 
+=== EMBED YOUTUBE / TWITCH — règles critiques ===
+⚠️ YouTube REQUIERT &muted=1 dans l'URL embed sinon la politique autoplay des navigateurs bloque la vidéo (son audible mais image noire/figée).
+⚠️ webview.doubleside = true — TOUJOURS mettre true pour éviter que la face arrière soit invisible.
+
+Fonction buildEmbedUrl à utiliser systématiquement pour YouTube/Twitch :
+function buildEmbedUrl(rawUrl, autoplay) {
+  const url = String(rawUrl || '').trim()
+  if (!url) return ''
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+  if (ytMatch) {
+    const ap = autoplay ? '1' : '0'
+    return 'https://www.youtube.com/embed/' + ytMatch[1] + '?autoplay=' + ap + '&muted=1&rel=0'
+  }
+  const twitchChannel = url.match(/twitch\.tv\/([A-Za-z0-9_]+)$/)
+  if (twitchChannel) return 'https://player.twitch.tv/?channel=' + twitchChannel[1] + '&parent=hyperfy.io&muted=false'
+  const twitchVod = url.match(/twitch\.tv\/videos\/([0-9]+)/)
+  if (twitchVod) return 'https://player.twitch.tv/?video=' + twitchVod[1] + '&parent=hyperfy.io'
+  return url
+}
+
 === EXEMPLE — webview YouTube/Twitch ===
 if (!world.isClient) return
 app.keepActive = true
@@ -287,8 +307,20 @@ const holder = app.create('group')
 app.add(holder)
 let webview = null
 
+function buildEmbedUrl(rawUrl) {
+  const url = String(rawUrl || '').trim()
+  if (!url) return ''
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+  if (ytMatch) return 'https://www.youtube.com/embed/' + ytMatch[1] + '?autoplay=1&muted=1&rel=0'
+  const twitchChannel = url.match(/twitch\.tv\/([A-Za-z0-9_]+)$/)
+  if (twitchChannel) return 'https://player.twitch.tv/?channel=' + twitchChannel[1] + '&parent=hyperfy.io'
+  const twitchVod = url.match(/twitch\.tv\/videos\/([0-9]+)/)
+  if (twitchVod) return 'https://player.twitch.tv/?video=' + twitchVod[1] + '&parent=hyperfy.io'
+  return url
+}
+
 function applyAll() {
-  const src = String(props.src || '').trim()
+  const src = buildEmbedUrl(props.src)
   const W = Math.max(0.05, Number(props.width ?? 3))
   const H = W / (16/9)
   if (!src) { if (webview) { holder.remove(webview); webview = null }; return }
@@ -298,6 +330,7 @@ function applyAll() {
   webview.width = W
   webview.height = H
   webview.factor = Number(props.factor ?? 150)
+  webview.doubleside = true
   holder.position.set(0, H/2, 0)
 }
 applyAll()
