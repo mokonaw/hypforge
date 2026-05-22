@@ -38,9 +38,14 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   world.open(url, newTab) — ouvre une URL (newTab = true pour nouvel onglet)
   world.getPlayer() — retourne le joueur local (côté client, sans argument)
   world.getPlayer(playerId) — retourne un joueur par son ID (côté serveur)
-  world.on('join', player => {...}) — joueur rejoint
-  world.on('leave', player => {...}) — joueur quitte
-  world.chat({ text: 'message' }, false) — affiche un message dans le chat monde (côté client)
+  world.add(node) — ajoute un node au monde (niveau world, pas app)
+  world.remove(node) — retire un node du monde
+  world.attach(vrm) — attache un VRM/node au monde sans modifier sa position
+  world.on('enter', player => {...}) — joueur entre dans le monde (serveur)
+  world.on('leave', player => {...}) — joueur quitte le monde (serveur)
+  world.on('chat', msg => {...}) — écoute les messages du chat monde (serveur) ; msg = { id, from, fromId, body, createdAt }
+  world.chat(msg, broadcast) — envoie un message dans le chat monde (serveur) ; msg = { id, from, fromId, body, createdAt }, broadcast = true pour tous
+  world.getTimestamp() — timestamp monde actuel (number)
 
 --- player (objet retourné par world.getPlayer) ---
   player.id — identifiant unique du joueur
@@ -157,6 +162,20 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   .stop()
   app.add(audio)
 
+--- 'controller' — contrôleur de personnage (pour NPC/agents) ---
+  Créer: app.create('controller')
+  ctrl.position.copy(app.position)
+  ctrl.quaternion.copy(app.quaternion)
+  ctrl.add(vrm) — attacher un VRM au controller
+  world.add(ctrl) — ajouter le controller au monde
+
+--- 'nametag' — étiquette nom flottante au-dessus d'un personnage ---
+  Créer: app.create('nametag')
+  nametag.label = 'Nom du personnage'
+  nametag.position.y = 2
+  nametag.active = boolean — afficher/masquer
+  vrm.add(nametag) — ajouter au VRM
+
 --- 'mesh' — primitif simple (utiliser 'prim' si matériau nécessaire) ---
   .type ('box'|'sphere'|'cylinder'|'plane'|'capsule')
   .width / .height / .depth / .color / .castShadow / .receiveShadow
@@ -199,8 +218,17 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
 --- GLOBALS MATHÉMATIQUES ---
   new Vector3(x, y, z) — vecteur 3D
   new Euler(x, y, z) — angles d'Euler
+  new Quaternion() — quaternion de rotation
+  new Matrix4() — matrice 4x4
   v.setFromMatrixPosition(node.matrixWorld) — extraire position monde d'un node
   e.setFromRotationMatrix(node.matrixWorld).reorder('YXZ').y — extraire rotation Y monde
+  vrm.quaternion.setFromAxisAngle(UP, angle) — faire pivoter un VRM vers un angle
+  vrm.setEmote(url) — jouer une animation emote sur un VRM (url = props.emoteFile.url)
+
+--- app (propriétés avancées) ---
+  app.instanceId — identifiant unique de l'instance de l'app dans le monde
+  app.state — objet d'état partagé côté serveur, accessible côté client via app.state
+  app.config — alias de props (lire les champs configurables depuis le serveur aussi)
 
 === CHAMPS app.configure() ===
 Types disponibles :
@@ -213,7 +241,10 @@ Types disponibles :
   { type: 'switch', key, label, options: [{label,value}], initial } — radio boutons
   { type: 'select', key, label, options: [{label,value}], initial }
   { type: 'color', key, label, initial } — color picker hex
-  { type: 'file', key, label, kind: 'texture'|'model'|'audio' }
+  { type: 'file', key, label, kind: 'texture'|'model'|'audio'|'emote' }
+  Champs conditionnels (affichés seulement si condition remplie) :
+  { type: 'text', key: 'myField', label: 'Label', when: [{ key: 'switchKey', op: 'eq', value: 'valeur' }] }
+  — when: tableau de conditions, op peut être 'eq' (égal)
 
 === PROPRIÉTÉS UI AVANCÉES ===
   ui.billboard = 'full' — toujours face à la caméra
@@ -227,7 +258,8 @@ Types disponibles :
   ui.boxShadow = '0 0 20px #color'
   ui.visible = boolean
   uitext.fontFamily = 'monospace'|'sans-serif'
-  uitext.fontWeight = 'bold'|'500'|'600'
+  uitext.fontWeight = 'bold'|'100'|'500'|'600'
+  uitext.lineHeight = 1.4 — interligne
   uitext.textShadow = '0 0 10px #color'
   uitext.letterSpacing = '2px'
 
