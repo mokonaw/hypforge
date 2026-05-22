@@ -39,6 +39,29 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   world.getPlayer() — retourne le joueur local (position.x/y/z disponibles)
   world.on('join', player => {...}) — joueur rejoint
   world.on('leave', player => {...}) — joueur quitte
+  world.chat({ text: 'message' }, false) — affiche un message dans le chat monde (côté client)
+
+--- app (propriétés supplémentaires) ---
+  app.isMoving — boolean, true si le joueur est en train de déplacer l'app (utile dans onPointerDown)
+
+--- INTERACTION POINTEUR sur les nodes ---
+  node.cursor = 'pointer' — change le curseur au survol
+  node.onPointerDown = () => {...} — callback au clic sur ce node
+  Pour trouver un mesh dans le GLB :
+    function findFirstMesh(root) {
+      const stack = [root]
+      while (stack.length) {
+        const n = stack.pop()
+        if (n && n.name === 'mesh') return n
+        if (n && n.children) for (let i = n.children.length-1; i >= 0; i--) stack.push(n.children[i])
+      }
+      return null
+    }
+    const target = findFirstMesh(app)
+
+--- props.file — asset uploadé ---
+  props.file?.url — URL de l'asset uploadé (string ou undefined)
+  Toujours vérifier : const fileUrl = props.file?.url ? String(props.file.url).trim() : ''
 
 === NODES DISPONIBLES via app.create('nom') ===
 
@@ -103,8 +126,15 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   app.add(video)
 
 --- 'audio' — son 3D ---
-  .src / .loop / .volume / .spatial
-  .play() / .pause() / .stop()
+  Créer: app.create('audio', { src, volume, loop, spatial, group: 'music'|'sfx'|'voice' })
+  .src (string URL — mp3, ogg, etc.)
+  .loop (boolean)
+  .volume (number 0-1)
+  .spatial (boolean — false = global/non-spatial)
+  .group ('music'|'sfx'|'voice') — groupe de mixage
+  .play() — retourne une Promise, toujours gérer l'erreur : const p = sound.play(); if (p?.catch) p.catch(() => {})
+  .pause()
+  .stop()
   app.add(audio)
 
 --- 'mesh' — primitif simple (utiliser 'prim' si matériau nécessaire) ---
