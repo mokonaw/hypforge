@@ -9,7 +9,9 @@ Hyperfy est un moteur de monde virtuel 3D. Les apps Hyperfy sont des scripts Jav
 
 === RÈGLES STRICTES DU RUNTIME HYPERFY V2 ===
 
-GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, setInterval, clearTimeout, clearInterval
+GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clearTimeout
+
+⚠️ IMPORTANT : setInterval N'EXISTE PAS dans Hyperfy V2. Pour les boucles temporelles, utilise app.on('update', delta => {...}) UNIQUEMENT.
 
 --- app ---
   app.position.set(x, y, z) — ou app.position.x = ...
@@ -18,23 +20,46 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, setI
   app.add(node) — ajoute un nœud enfant
   app.remove(node) — retire un nœud
   app.get('NomNode') — récupère un nœud enfant par son nom (ex: nœud GLB nommé dans Blender)
-  app.on('update', delta => {...}) — boucle de rendu (delta en secondes)
+  app.on('update', delta => {...}) — boucle de rendu (delta en secondes) — SEUL moyen de faire des boucles continues
   app.on('fixedUpdate', delta => {...}) — physique fixe
+  app.keepActive = true — empêche l'app de se désactiver quand hors champ (utile pour webview, audio, etc.)
   app.configure([...fields]) — déclare les champs éditables dans l'UI Hyperfy (TOUJOURS en premier dans le script)
+  app.onDispose = () => {...} — nettoyage quand l'app est détruite (supprimer DOM, nodes, etc.)
 
 --- props ---
   props = valeurs des champs définis par app.configure()
   Lire avec props.monChamp — JAMAIS de déstructuration
+  props.onChange(() => applyAll()) — callback appelé à chaque changement de props dans l'UI Hyperfy
 
 --- world ---
   world.isClient — boolean, true si exécuté côté navigateur
   world.isServer — boolean
   world.open(url, newTab) — ouvre une URL (newTab = true pour nouvel onglet)
-  world.getPlayer() — retourne le joueur local
+  world.getPlayer() — retourne le joueur local (position.x/y/z disponibles)
   world.on('join', player => {...}) — joueur rejoint
   world.on('leave', player => {...}) — joueur quitte
 
 === NODES DISPONIBLES via app.create('nom') ===
+
+--- 'webview' — navigateur web CSS3D dans le monde (PRÉFÉRER à iframe DOM) ---
+  Créer: app.create('webview')
+  .space = 'world'
+  .src = 'https://...' — URL à afficher
+  .width / .height (number, mètres)
+  .factor (number, 50–800, résolution — défaut 150, >150 impacte les perfs)
+  .doubleside (boolean)
+  .position.set(x, y, z)
+  holder.add(webview) — ajouter à un group
+  ✅ Supporte YouTube embed, Twitch player, et toute URL directe
+  ❌ Ne pas créer si src est vide — provoque une erreur engine
+
+--- 'prim' — primitif 3D avec matériau (remplace 'mesh') ---
+  Créer: app.create('prim', { type: 'box', scale: [w,h,d], position: [x,y,z], color: '#111111', castShadow: false, receiveShadow: false, metalness: 0, roughness: 1 })
+  .scale.set(w, h, d)
+  .position.set(x, y, z)
+  .color (string hex)
+  .visible (boolean)
+  app.add(prim)
 
 --- 'action' — interaction cliquable ---
   .label (string)
@@ -43,18 +68,19 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, setI
   .onTrigger = () => {}
   .onStart = () => {}
   .onCancel = () => {}
-  .position.set(x, y, z) — positionner l'action dans la scène
+  .position.set(x, y, z)
   app.add(action)
 
 --- 'ui' — interface utilisateur en espace monde ---
   Créer: app.create('ui', { space: 'world', width: 350, height: 140, size: 0.01, backgroundColor: 'rgba(0,0,0,0)', borderRadius: 10, padding: 10 })
   .position.set(x, y, z)
-  .add(uiview) — ajouter des enfants UI
+  .active (boolean) — afficher/masquer
+  .add(uiview)
   app.add(ui)
 
 --- 'uiview' — conteneur layout dans un 'ui' ---
   Créer: app.create('uiview', { flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 8, padding: 0 })
-  .add(child) — ajouter uitext, uiimage, uiview enfants
+  .add(child) — uitext, uiimage, uiview enfants
 
 --- 'uitext' — texte dans un 'ui' ---
   Créer: app.create('uitext', { value: 'Mon texte', fontSize: 24, color: 'white', textAlign: 'center' })
@@ -71,37 +97,31 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, setI
 
 --- 'video' — écran vidéo 3D (MP4 direct uniquement) ---
   .src (string, URL MP4 directe — PAS YouTube embed)
-  .width / .height (number)
-  .aspect (number, défaut 16/9)
-  .loop (boolean)
-  .volume (number 0-1)
+  .width / .height / .aspect / .loop / .volume
   .play() / .pause() / .stop()
   app.add(video)
 
 --- 'audio' — son 3D ---
-  .src (string URL MP3/OGG)
-  .loop (boolean)
-  .volume (number)
-  .spatial (boolean)
+  .src / .loop / .volume / .spatial
   .play() / .pause() / .stop()
   app.add(audio)
 
---- 'mesh' — primitif 3D ---
+--- 'mesh' — primitif simple (utiliser 'prim' si matériau nécessaire) ---
   .type ('box'|'sphere'|'cylinder'|'plane'|'capsule')
-  .width / .height / .depth (number)
-  .color (string hex)
-  .castShadow / .receiveShadow (boolean)
+  .width / .height / .depth / .color / .castShadow / .receiveShadow
   app.add(mesh)
 
 --- 'collider' — collision ---
   .type ('box'|'sphere'|'capsule'|'geometry')
-  .width / .height / .depth (number)
   .trigger (boolean)
-  app.add(collider)
+  .setSize(w, h, d) — définir les dimensions
+  rigidbody.add(collider) — TOUJOURS ajouter à un rigidbody
+  app.add(collider) si standalone
 
---- 'rigidbody' — physique ---
+--- 'rigidbody' — physique (requis pour les colliders statiques) ---
   .type ('dynamic'|'static'|'kinematic')
   app.add(rigidbody)
+  rigidbody.add(collider)
 
 --- 'group' — conteneur/pivot ---
   .position.set(x,y,z)
@@ -112,68 +132,84 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, setI
 
 === CHAMPS app.configure() ===
 Types disponibles :
-  { type: 'text', key, label, initial }
+  { type: 'section', key, label } — séparateur visuel de section (pas de valeur)
+  { type: 'text', key, label, placeholder, initial }
   { type: 'textarea', key, label, placeholder, initial }
-  { type: 'number', key, label, initial }
+  { type: 'number', key, label, dp, step, bigStep, initial }
   { type: 'range', key, label, min, max, step, initial }
   { type: 'toggle', key, label, trueLabel, falseLabel, initial }
+  { type: 'switch', key, label, options: [{label,value}], initial } — radio boutons
   { type: 'select', key, label, options: [{label,value}], initial }
+  { type: 'color', key, label, initial } — color picker hex
   { type: 'file', key, label, kind: 'texture'|'model'|'audio' }
 
-=== EXEMPLE — image cliquable avec lien ===
-app.configure([
-  { type: 'textarea', key: 'url', label: 'URL', initial: 'https://example.com' },
-  { type: 'text', key: 'displayText', label: 'Texte affiché', initial: 'Visiter' },
-  { type: 'file', key: 'imageFile', label: 'Image', kind: 'texture' },
-  { type: 'range', key: 'posY', label: 'Position Y', min: 0, max: 5, step: 0.1, initial: 2.2 },
-  { type: 'toggle', key: 'visible', label: 'Visible', trueLabel: 'Oui', falseLabel: 'Non', initial: true },
-])
-
-const ui = app.create('ui', {
-  space: 'world', width: 350, height: 180, size: 0.01,
-  backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12, padding: 10,
-})
-ui.position.set(0, props.posY || 2.2, 0)
-
-const container = app.create('uiview', {
-  flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 8,
-})
-
-if (props.imageFile && props.imageFile.url) {
-  const img = app.create('uiimage', {
-    src: props.imageFile.url.replace('asset://', '/assets/'),
-    width: 240, height: 148, objectFit: 'contain', borderRadius: 8,
-  })
-  container.add(img)
+=== PATTERN RECOMMANDÉ — applyAll avec props.onChange ===
+// Toujours structurer le script avec des fonctions apply* appelées au init ET sur changement de props
+function applyAll() {
+  // recalcule et applique toutes les dimensions, positions, visibilités
+}
+applyAll()
+if (props && typeof props.onChange === 'function') {
+  props.onChange(() => applyAll())
 }
 
-const label = (props.displayText && props.displayText.trim()) ? props.displayText.trim() : (props.url || '')
-const txt = app.create('uitext', { value: label, fontSize: 22, color: 'white', textAlign: 'center' })
-container.add(txt)
-ui.add(container)
+=== EXEMPLE — webview YouTube/Twitch ===
+if (!world.isClient) return
+app.keepActive = true
 
-const action = app.create('action', {
-  label: 'Ouvrir', distance: 2, duration: 0.5,
-  onTrigger: () => {
-    if (props.url && world.isClient) world.open(props.url, true)
-  },
-})
-action.position.set(0, 1.7, 0)
+app.configure([
+  { type: 'text', key: 'src', label: 'URL YouTube/Twitch/Web', initial: '' },
+  { type: 'number', key: 'width', label: 'Largeur (m)', initial: 3 },
+  { type: 'number', key: 'factor', label: 'Résolution', initial: 150 },
+])
 
-app.add(ui)
-app.add(action)
+const holder = app.create('group')
+app.add(holder)
+let webview = null
+
+function applyAll() {
+  const src = String(props.src || '').trim()
+  const W = Math.max(0.05, Number(props.width ?? 3))
+  const H = W / (16/9)
+  if (!src) { if (webview) { holder.remove(webview); webview = null }; return }
+  if (!webview) { webview = app.create('webview'); holder.add(webview) }
+  webview.space = 'world'
+  webview.src = src
+  webview.width = W
+  webview.height = H
+  webview.factor = Number(props.factor ?? 150)
+  holder.position.set(0, H/2, 0)
+}
+applyAll()
+if (props && typeof props.onChange === 'function') props.onChange(() => applyAll())
+app.onDispose = () => { try { app.remove(holder) } catch {} }
 
 === EXEMPLE — rotation continue ===
 app.on('update', delta => {
   app.rotation.y += 1.0 * delta
 })
 
+=== EXEMPLE — détection proximité joueur (sans setInterval) ===
+let isNear = false
+app.on('update', delta => {
+  const player = world.getPlayer()
+  if (!player) return
+  const dx = player.position.x - app.position.x
+  const dy = player.position.y - app.position.y
+  const dz = player.position.z - app.position.z
+  const dist = Math.sqrt(dx*dx + dy*dy + dz*dz)
+  if (dist < 5 && !isNear) { isNear = true; /* action proche */ }
+  else if (dist >= 5 && isNear) { isNear = false; /* action éloigné */ }
+})
+
 === CE QUI N'EXISTE PAS — NE JAMAIS UTILISER ===
-  ❌ app.create('iframe')
-  ❌ app.create('text') — utilise 'uitext' dans un 'ui'
-  ❌ app.create('plane') — utilise mesh { type: 'plane' }
+  ❌ setInterval / clearInterval — N'EXISTENT PAS, utiliser app.on('update')
+  ❌ app.create('iframe') — utiliser 'webview'
+  ❌ app.create('text') — utiliser 'uitext' dans un 'ui'
+  ❌ app.create('plane') — utiliser prim { type: 'box' } ou mesh
   ❌ app.traverse()
   ❌ world.open() sans vérifier world.isClient
+  ❌ document.createElement() — utiliser 'webview' à la place
 
 === RÈGLES DE GÉNÉRATION ===
 - Code JavaScript brut uniquement. Zéro markdown, zéro \`\`\`, zéro explication.
@@ -182,6 +218,8 @@ app.on('update', delta => {
 - N'utilise QUE les nodes et APIs documentés ci-dessus.
 - Pas d'import, pas de require, pas de module ES.
 - Pour ouvrir des liens : toujours vérifier world.isClient avant world.open().
+- Pour les webviews : NE PAS créer si src est vide.
+- Utiliser app.onDispose pour nettoyer les nodes et effets de bord.
 - TOUJOURS masquer le cube placeholder par défaut en ajoutant ces lignes juste après app.configure() :
     const block = app.get('Block')
     if (block) block.active = false`
