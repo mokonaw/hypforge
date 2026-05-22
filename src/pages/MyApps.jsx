@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { getEffect } from '@/lib/effects'
 import { buildHypFile, downloadFile } from '@/lib/hypExporter'
+import { getAnonymousId } from '@/lib/anonymousId'
 
 async function fetchModelFile(url, filename) {
   if (!url) return null
@@ -22,7 +23,10 @@ export default function MyApps() {
 
   const { data: apps, isLoading } = useQuery({
     queryKey: ['hypapps'],
-    queryFn: () => base44.entities.HypApp.list('-updated_date', 100),
+    queryFn: async () => {
+      const res = await base44.functions.invoke('getMyApps', { anonymous_id: getAnonymousId() })
+      return res.data.apps || []
+    },
     initialData: [],
   })
 

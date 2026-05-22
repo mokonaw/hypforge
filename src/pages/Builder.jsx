@@ -13,6 +13,7 @@ import PropsEditor from '@/components/builder/PropsEditor'
 import ScriptVisualizer from '@/components/builder/ScriptVisualizer'
 
 import { buildHypFile, downloadFile } from '@/lib/hypExporter'
+import { getAnonymousId } from '@/lib/anonymousId'
 
 function Section({ step, title, icon: Icon, children, badge }) {
   return (
@@ -142,6 +143,7 @@ export default function Builder() {
         effect_params: propsSchema,
         custom_script: script,
         ai_prompt: aiPrompt,
+        anonymous_id: getAnonymousId(),
       }
       if (loadId) {
         await base44.entities.HypApp.update(loadId, payload)
