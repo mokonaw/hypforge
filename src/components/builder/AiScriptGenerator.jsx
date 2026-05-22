@@ -36,13 +36,33 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   world.isClient — boolean, true si exécuté côté navigateur
   world.isServer — boolean
   world.open(url, newTab) — ouvre une URL (newTab = true pour nouvel onglet)
-  world.getPlayer() — retourne le joueur local (position.x/y/z disponibles)
+  world.getPlayer() — retourne le joueur local (côté client, sans argument)
+  world.getPlayer(playerId) — retourne un joueur par son ID (côté serveur)
   world.on('join', player => {...}) — joueur rejoint
   world.on('leave', player => {...}) — joueur quitte
   world.chat({ text: 'message' }, false) — affiche un message dans le chat monde (côté client)
 
+--- player (objet retourné par world.getPlayer) ---
+  player.id — identifiant unique du joueur
+  player.name — nom du joueur
+  player.position — Vector3 (x, y, z)
+  player.rotation.y — rotation Y
+  player.teleport(position, rotationY) — téléporte le joueur (position = Vector3, rotationY = number)
+
 --- app (propriétés supplémentaires) ---
   app.isMoving — boolean, true si le joueur est en train de déplacer l'app (utile dans onPointerDown)
+
+--- app.send / app.on — communication client ↔ serveur ---
+  app.send('event:name', data) — envoie un événement à TOUS les clients (depuis serveur) ou au serveur (depuis client)
+  app.send('event:name', data, playerId) — envoie un événement à UN seul client (depuis serveur uniquement)
+  app.on('event:name', (data, client) => {...}) — écoute un événement (fonctionne côté client ET serveur)
+  Exemple pattern complet :
+    // Client → Serveur
+    app.send('player:action', { playerId: localPlayer.id, value: 42 })
+    // Serveur écoute
+    app.on('player:action', (data, client) => { app.send('server:response', { result: data.value * 2 }) })
+    // Client écoute la réponse
+    app.on('server:response', (data) => { console.log(data.result) })
 
 --- INTERACTION POINTEUR sur les nodes ---
   node.cursor = 'pointer' — change le curseur au survol
@@ -156,10 +176,31 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
 
 --- 'group' — conteneur/pivot ---
   .position.set(x,y,z)
+  .rotation.set(x,y,z)
   .add(child)
   app.add(group)
 
 --- 'anchor' / 'particles' / 'lod' — usages avancés ---
+
+--- CLONAGE de nodes ---
+  node.clone(true) — clone un node et tous ses enfants (deep clone)
+  Utile pour dupliquer un template GLB défini dans Blender :
+    const template = app.get('MyNode')
+    template.visible = false  // cacher le template
+    const clone = template.clone(true)
+    clone.visible = true
+    clone.position.set(x, y, z)
+    app.add(clone)
+
+--- TRIGGER (zone de collision) ---
+  node.onTriggerEnter = (result) => {...} — callback quand un objet entre dans la zone trigger
+  (nécessite un collider avec trigger: true sur le node)
+
+--- GLOBALS MATHÉMATIQUES ---
+  new Vector3(x, y, z) — vecteur 3D
+  new Euler(x, y, z) — angles d'Euler
+  v.setFromMatrixPosition(node.matrixWorld) — extraire position monde d'un node
+  e.setFromRotationMatrix(node.matrixWorld).reorder('YXZ').y — extraire rotation Y monde
 
 === CHAMPS app.configure() ===
 Types disponibles :
@@ -173,6 +214,22 @@ Types disponibles :
   { type: 'select', key, label, options: [{label,value}], initial }
   { type: 'color', key, label, initial } — color picker hex
   { type: 'file', key, label, kind: 'texture'|'model'|'audio' }
+
+=== PROPRIÉTÉS UI AVANCÉES ===
+  ui.billboard = 'full' — toujours face à la caméra
+  ui.pivot = 'top-center'|'center'|etc.
+  ui.flexDirection = 'row'|'column'
+  ui.justifyContent = 'flex-start'|'center'|'flex-end'
+  ui.alignItems = 'stretch'|'center'|'flex-start'
+  ui.gap = number
+  ui.border = '2px solid #color'
+  ui.borderRadius = number
+  ui.boxShadow = '0 0 20px #color'
+  ui.visible = boolean
+  uitext.fontFamily = 'monospace'|'sans-serif'
+  uitext.fontWeight = 'bold'|'500'|'600'
+  uitext.textShadow = '0 0 10px #color'
+  uitext.letterSpacing = '2px'
 
 === PATTERN RECOMMANDÉ — applyAll avec props.onChange ===
 // Toujours structurer le script avec des fonctions apply* appelées au init ET sur changement de props
