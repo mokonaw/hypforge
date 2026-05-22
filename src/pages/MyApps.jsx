@@ -118,9 +118,9 @@ export default function MyApps() {
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border/60 pt-3">
                   <span>{app.author || 'anonyme'}</span>
-                  {app.model_filename && (
-                    <span className="font-mono truncate max-w-[50%]">{app.model_filename}</span>
-                  )}
+                  <span className="text-muted-foreground/70">
+                    {app.updated_date ? new Date(app.updated_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                  </span>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" className="flex-1" onClick={() => navigate(`/builder?id=${app.id}`)}>
