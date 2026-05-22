@@ -131,13 +131,15 @@ const speed = ${num(p.speed, 1)}
 const intensity = ${num(p.intensity, 1)}
 let t = 0
 
-// Collecte tous les matériaux du modèle
+// Collecte tous les matériaux du modèle (app.traverse n'existe pas en V2)
 const materials = []
-app.traverse(node => {
-  if (node.material) {
-    materials.push(node.material)
-  }
-})
+const stack = [app]
+while (stack.length) {
+  const n = stack.pop()
+  if (!n) continue
+  if (n.material) materials.push(n.material)
+  if (n.children) for (let i = n.children.length - 1; i >= 0; i--) stack.push(n.children[i])
+}
 
 function hsl(h, s, l) {
   // conversion HSL -> RGB 0..1
