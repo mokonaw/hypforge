@@ -263,6 +263,18 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/^[ \t]*proximityAction\s*=[^\n]+\n/gm, '')
   // Remove any remaining line that solely references proximityAction (e.g. standalone identifier lines)
   scriptSource = scriptSource.replace(/^[ \t]*proximityAction\s*;?[ \t]*\n/gm, '')
+  // Remove empty `if (proximityAction) { }` or `if (proximityAction) {\n}` blocks
+  scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*proximityAction\s*\)\s*\{[\s\n]*\}[ \t]*\n?/g, '')
+  // Remove `try { if (proximityAction) app.remove(proximityAction) } catch(e) {}` in onDispose
+  scriptSource = scriptSource.replace(/[ \t]*try\s*\{[^}]*proximityAction[^}]*\}\s*catch[^}]*\}[ \t]*\n?/g, '')
+  // Fix misindented closing brace left after removing content inside an if-block:
+  // Pattern: `    webview = null\n      }` where the `}` has MORE indent than the assignment → remove it
+  scriptSource = scriptSource.replace(/([ \t]*\w[^\n]*\n)([ \t]{6,}\}[ \t]*\n)/g, (m, prev, brace) => {
+    // Only remove if the brace indent is deeper than the previous line's indent
+    const prevIndent = prev.match(/^([ \t]*)/)[1].length
+    const braceIndent = brace.match(/^([ \t]*)/)[1].length
+    return braceIndent > prevIndent + 2 ? prev : m
+  })
   // Fix screenshotView.visible = !isNear → always visible (proximity removed)
   scriptSource = scriptSource.replace(/\bscreenshotView\.visible\s*=\s*!isNear\b/g, 'screenshotView.visible = true')
   // Remove `if (isNear) { ... }` / `if (!isNear) { ... }` multi-line blocks
