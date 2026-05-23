@@ -307,9 +307,9 @@ function patchScript(scriptSource) {
   // Remove orphan `}catch {} }` — when a try/catch was partially removed and left `}catch {}`
   // Also handles double `catch {}` on same line OR on separate lines (e.g. `} catch {}\ncatch {} }`)
   // Must run BEFORE removeOrphanClosingBraces so the stray `}` it leaves behind is caught
-  // First: handle multi-line double catch (catch {} on its own line)
-  scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n?/g, '\n')
-  // Then: handle single-line double catch
+  // First: handle stray `catch {}` line that follows a line ending with `catch {}` (multi-line double catch)
+  scriptSource = scriptSource.replace(/catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n?/g, 'catch {}\n')
+  // Then: handle `}catch {}` patterns (single-line double catch)
   scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}(?:\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\})*\s*\n?/g, '\n')
   // After else/catch removal, lone `}` lines may remain. Remove any that would bring brace depth negative.
   scriptSource = removeOrphanClosingBraces(scriptSource)
