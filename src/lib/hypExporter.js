@@ -721,7 +721,7 @@ export async function buildHypFile({
   // --- Blueprint ---
   const blueprint = {
     id: nanoid(10),
-    version: 11,
+    version: 2,
     name: name || 'Untitled',
     image: null,
     author: author || null,

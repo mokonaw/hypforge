@@ -98,8 +98,9 @@ CRITIQUE : L'objet de configuration s'appelle config, PAS props.
   ❌ Ne pas créer si src est vide — provoque une erreur engine
 
 --- 'prim' — primitif 3D avec matériau (remplace 'mesh') ---
-  Créer: app.create('prim', { type: 'box', scale: [w,h,d], position: [x,y,z], color: '#111111', castShadow: false, receiveShadow: false, metalness: 0, roughness: 1 })
-  ⚠️ TOUJOURS passer scale et position dans l'objet de config initial (tableaux [x,y,z]) — NE JAMAIS appeler .scale.set() ou .position.set() avant que le nœud soit attaché
+  Créer: app.create('prim') SANS second argument
+  Puis configurer : prim.type = 'box', prim.scale.set(w,h,d), prim.position.set(x,y,z), prim.color = '#111111', etc.
+  ⚠️ JAMAIS passer d'objet de config à app.create('prim', {...}) — syntaxe non supportée
   .color (string hex) — modifiable après création
   .visible (boolean)
   app.add(prim) ou holder.add(prim) selon la hiérarchie souhaitée
@@ -291,6 +292,7 @@ app.configure([
 const holder = app.create('group')
 app.add(holder)
 let webview = null
+let placeholder = null
 
 function buildEmbedUrl(rawUrl) {
   const url = String(rawUrl || '').trim()
@@ -306,19 +308,37 @@ function buildEmbedUrl(rawUrl) {
 
 function applyAll() {
   const src = buildEmbedUrl(config.src)
-  const W = Math.max(0.05, Number(config.width ?? 3))
+  const W = Math.max(0.1, Number(config.width ?? 3))
   const H = W / (16/9)
-  if (!src) { if (webview) { holder.remove(webview); webview = null }; return }
-  if (!webview) { webview = app.create('webview'); holder.add(webview) }
-  webview.space = 'world'
-  webview.src = src
-  webview.width = W
-  webview.height = H
-  webview.factor = Number(config.factor ?? 150)
-  webview.doubleside = true
+  const factor = Math.max(50, Math.min(800, Number(config.factor ?? 150)))
+
   holder.position.set(0, H/2, 0)
+
+  if (src) {
+    if (placeholder) { holder.remove(placeholder); placeholder = null }
+    if (!webview) { webview = app.create('webview'); holder.add(webview) }
+    webview.space = 'world'
+    webview.src = src
+    webview.width = W
+    webview.height = H
+    webview.factor = factor
+    webview.doubleside = true
+    webview.active = true
+  } else {
+    if (webview) { holder.remove(webview); webview = null }
+    if (!placeholder) {
+      placeholder = app.create('prim')
+      placeholder.type = 'box'
+      placeholder.scale.set(W, H, 0.02)
+      placeholder.color = '#444444'
+      placeholder.castShadow = false
+      placeholder.receiveShadow = false
+      holder.add(placeholder)
+    }
+  }
 }
 applyAll()
+app.on('config', () => applyAll())
 
 ⛔ NE PAS UTILISER app.on('update') — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
 ⛔ NE PAS UTILISER world.getPlayer() / world.entities.getLocalPlayer() — N'EXISTE PAS dans Hyperfy V2, CRASHE.
@@ -355,8 +375,9 @@ applyAll()
 - N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne.
 - JAMAIS écrire if (condition) { ... return } else { ... } — le else est du code mort après un return.
 - TOUJOURS utiliser config.xxx pour lire les valeurs configurables, JAMAIS props.xxx.
-- Supprimer if (!world.isClient) return et app.keepActive = true — inutile.
-- Supprimer app.onDispose — API non garantie.
+- Garder if (world.isClient) { ... } pour wrapper tout le code client (pas de return en top-level).
+- app.keepActive = true — optionnel, seulement si nécessaire (webview, audio).
+- app.onDispose — optionnel, si nettoyage nécessaire.
 
 - TOUJOURS sécuriser l'accès aux assets uploadés avec try/catch :
     function getFileUrl(propVal) {
