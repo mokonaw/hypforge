@@ -10,12 +10,19 @@
 
 import { buildScript } from './effects'
 
-// Tiny synchronous hex id generator — we don't need true cryptographic hashes
-// inside a .hyp (the runtime recomputes them), just stable-looking unique names.
-function hexId(len = 32) {
-  const chars = '0123456789abcdef'
+// Generate a SHA-256 hash of a file's bytes (returns 64-char hex string)
+async function sha256Hex(arrayBuffer) {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer)
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// Generate a short nanoid-style alphanumeric ID (like Hyperfy uses internally)
+function nanoid(len = 10) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
   let out = ''
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * 16)]
+  const arr = new Uint8Array(len)
+  crypto.getRandomValues(arr)
+  for (let i = 0; i < len; i++) out += chars[arr[i] % chars.length]
   return out
 }
 
@@ -75,12 +82,15 @@ export async function buildHypFile({
   let modelUrl = null
   if (modelFile) {
     const ext = extFromName(modelFile.name, 'glb')
-    const url = `asset://${hexId()}.${ext}`
+    const modelBuffer = await modelFile.arrayBuffer()
+    const modelHash = await sha256Hex(modelBuffer)
+    const url = `asset://${modelHash}.${ext}`
     modelUrl = url
     assets.push({
       type: ext === 'vrm' ? 'avatar' : 'model',
       url,
       file: modelFile,
+      buffer: modelBuffer,
     })
   }
 
@@ -93,12 +103,14 @@ export async function buildHypFile({
     const scriptBlob = new Blob([scriptSource], { type: 'application/javascript' })
     scriptFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
   }
-  const scriptUrl = `asset://${hexId()}.js`
-  assets.push({ type: 'script', url: scriptUrl, file: scriptFile })
+  const scriptBuffer = await scriptFile.arrayBuffer()
+  const scriptHash = await sha256Hex(scriptBuffer)
+  const scriptUrl = `asset://${scriptHash}.js`
+  assets.push({ type: 'script', url: scriptUrl, file: scriptFile, buffer: scriptBuffer })
 
   // --- Blueprint ---
   const blueprint = {
-    id: slugify(name),
+    id: nanoid(10),
     version: 1,
     name: name || 'Untitled',
     image: null,
@@ -112,7 +124,6 @@ export async function buildHypFile({
     public: false,
     locked: false,
     unique: false,
-    scene: false,
     disabled: false,
   }
 
@@ -131,7 +142,7 @@ export async function buildHypFile({
   const headerSize = new Uint8Array(4)
   new DataView(headerSize.buffer).setUint32(0, headerBytes.length, true)
 
-  const fileBuffers = await Promise.all(assets.map(a => a.file.arrayBuffer()))
+  const fileBuffers = assets.map(a => a.buffer)
 
   const filename = `${slugify(name)}.hyp`
   return new File([headerSize, headerBytes, ...fileBuffers], filename, {
