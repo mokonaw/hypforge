@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Download, Save, Loader2, FileCode2, Sparkles, Settings, Wand2, ChevronDown, ChevronUp, Eye, FileJson } from 'lucide-react'
+import { Download, Save, Loader2, FileCode2, Sparkles, Settings, Wand2, ChevronDown, ChevronUp, Eye, FileJson, FileSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { base44 } from '@/api/base44Client'
@@ -11,6 +11,7 @@ import ScriptPreview from '@/components/builder/ScriptPreview'
 import AiScriptGenerator from '@/components/builder/AiScriptGenerator'
 import PropsEditor from '@/components/builder/PropsEditor'
 import ScriptVisualizer from '@/components/builder/ScriptVisualizer'
+import HypAnalyzer from '@/components/builder/HypAnalyzer'
 
 import { buildHypFile, downloadFile } from '@/lib/hypExporter'
 import { getAnonymousId } from '@/lib/anonymousId'
@@ -52,6 +53,7 @@ export default function Builder() {
   const [saving, setSaving] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showVisualizer, setShowVisualizer] = useState(false)
+  const [showAnalyzer, setShowAnalyzer] = useState(false)
 
   // Load existing app if ?id=...
   useEffect(() => {
@@ -189,6 +191,10 @@ export default function Builder() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setShowAnalyzer(true)}>
+            <FileSearch className="w-4 h-4 mr-2" />
+            Analyser .hyp
+          </Button>
           <Button variant="outline" onClick={exportJson} disabled={!canExport}>
             <FileJson className="w-4 h-4 mr-2" />
             Exporter .json
@@ -291,6 +297,9 @@ export default function Builder() {
 
       {showVisualizer && (
         <ScriptVisualizer script={script} onClose={() => setShowVisualizer(false)} />
+      )}
+      {showAnalyzer && (
+        <HypAnalyzer onClose={() => setShowAnalyzer(false)} />
       )}
     </div>
   )
