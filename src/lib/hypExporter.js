@@ -103,7 +103,7 @@ function detectScriptIssues(src) {
   for (const call of fnCalls) {
     if (!fnDefs.has(call) && !builtins.has(call) && /^[a-z]/.test(call)) {
       // Heuristic: if a camelCase fn is called but never defined, flag it
-      if (['updateVolume','scheduleProximityCheck','getDistanceToApp','getLocalPlayer'].includes(call) && !fnDefs.has(call)) {
+      if (['updateVolume','scheduleProximityCheck','setupVolumeCheck','checkVolume','getDistanceToApp','getLocalPlayer'].includes(call) && !fnDefs.has(call)) {
         issues.push(`${call}() called but not defined`)
       }
     }
@@ -162,11 +162,18 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/^[ \t]*let\s+lastDist\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+volumeAudio\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+proximityCheckTimeout\s*=\s*[^\n]+\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+volumeTimeout\s*=\s*[^\n]+\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+isNearby\s*=\s*[^\n]+\n/m, '')
+  // Remove proxDist lines that read props.proximityDistance (never declared in configure)
+  scriptSource = scriptSource.replace(/^[ \t]*const\s+proxDist\s*=[^\n]+proximityDistance[^\n]+\n/gm, '')
 
   // Remove function bodies for known dead functions (only if actually unused after patches)
   // updateVolume: always remove — Hyperfy has no volume API accessible
   scriptSource = removeFunctionDef(scriptSource, 'updateVolume')
   scriptSource = removeFunctionDef(scriptSource, 'getProximityDist')
+  // setupVolumeCheck / checkVolume — use non-existent webview.volume API
+  scriptSource = removeFunctionDef(scriptSource, 'setupVolumeCheck')
+  scriptSource = removeFunctionDef(scriptSource, 'checkVolume')
   // getDistanceToApp + getLocalPlayer: remove only if scheduleProximityCheck is also gone
   const hasSchedule = /function\s+scheduleProximityCheck\s*\(/.test(scriptSource)
   if (!hasSchedule) {
@@ -191,6 +198,8 @@ function patchScript(scriptSource) {
   // Remove any remaining calls to removed functions
   scriptSource = scriptSource.replace(/^[ \t]*updateVolume\([^)]*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*getProxDist\(\s*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*setupVolumeCheck\(\s*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*checkVolume\(\s*\)\s*;?[ \t]*\n/gm, '')
 
   // Remove app.remove(X) inside removeXxx() functions for nodes that were never app.add()'d
   // (they're in a holder, so only holder.remove() is valid)

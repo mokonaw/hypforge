@@ -325,9 +325,11 @@ app.onDispose = () => { try { app.remove(holder) } catch {} }
 ⛔ NE PAS UTILISER app.on('update') — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
 ⛔ NE PAS UTILISER world.getPlayer() / world.entities.getLocalPlayer() — N'EXISTE PAS dans Hyperfy V2, CRASHE.
 ⛔ NE PAS UTILISER setTimeout pour simuler une boucle de proximité — provoque des comportements imprévisibles.
-⛔ NE PAS déclarer des variables (isNear, lastDist, etc.) liées à une fonctionnalité non implémentable — code mort qui CRASHE.
+⛔ NE PAS déclarer des variables (isNear, isNearby, lastDist, volumeTimeout, etc.) liées à une fonctionnalité non implémentable — code mort qui CRASHE.
+⛔ NE JAMAIS créer de fonctions setupVolumeCheck / checkVolume / updateVolume — webview.volume n'existe pas dans Hyperfy V2.
+⛔ NE JAMAIS lire props.proximityDistance sans le déclarer dans app.configure() — et si tu ne peux pas implémenter la logique de proximité, ne déclare pas ce champ du tout.
 ⛔ Si l'utilisateur demande une détection de proximité, propose une action cliquable via app.create('action') à la place.
-⛔ NE JAMAIS appeler une fonction qui n'est pas définie dans le script (ex: updateVolume, scheduleProximityCheck si non définies).
+⛔ NE JAMAIS appeler une fonction qui n'est pas définie dans le script (ex: updateVolume, scheduleProximityCheck, setupVolumeCheck si non définies).
 
 === CE QUI N'EXISTE PAS — NE JAMAIS UTILISER ===
   ❌ setInterval / clearInterval — N'EXISTENT PAS, utiliser app.on('update')
