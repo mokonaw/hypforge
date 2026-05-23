@@ -376,22 +376,22 @@ function removeOrphanElseBlocks(src) {
 
 /**
  * Remove ALL stray `else {` blocks — ultra aggressive cleanup.
- * Simply removes any `else {` that appears after a `return` statement (with possible blank lines between).
- * Also removes the closing `}` of the if-block that precedes it.
+ * Simply removes any `else {` that appears after a `}` (with possible blank lines between).
+ * Also removes the closing `}` that precedes it.
  */
 function removeStrayElseBlocks(src) {
-  // Pattern: `return` → optional whitespace/newlines → `}` → optional whitespace/newlines → `else {`
-  // We remove from the `}` (closing the if-block) through the entire else block
-  const pattern = /\breturn\s*;?[ \t]*\n(?:[ \t]*\n)*[ \t]*\}[ \t]*\n(?:[ \t]*\n)*[ \t]*else\s*\{/g
+  // Pattern: `}` → optional whitespace/newlines → `else {`
+  // We remove from the `}` through the entire else block
+  const pattern = /\}[ \t]*\n(?:[ \t]*\n)*[ \t]*else\s*\{/g
   let result = src
   let match
   let iterations = 0
   while ((match = pattern.exec(result)) !== null && iterations < 10) {
     iterations++
-    // Find where the `}` is (end of if-block)
-    const ifBlockEnd = match.index + match[0].indexOf('}') + 1
+    // Find where the `}` is
+    const ifBlockEnd = match.index + 1
     // Find where the `else {` starts
-    const elseStart = match.index + match[0].lastIndexOf('else')
+    const elseStart = match.index + match[0].indexOf('else')
     // Now find the end of the else block by brace counting
     let depth = 0
     let i = elseStart
