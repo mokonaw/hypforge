@@ -378,6 +378,7 @@ function removeOrphanElseBlocks(src) {
  * Remove ALL stray `else {` blocks — aggressive cleanup.
  * Scans line-by-line: if a line contains only `else {` (with optional leading whitespace)
  * and the previous non-empty line was a closing `}`, remove the else block.
+ * Also removes the orphan `}` that precedes it (since it's now a standalone closing brace).
  */
 function removeStrayElseBlocks(src) {
   const lines = src.split('\n')
@@ -392,7 +393,10 @@ function removeStrayElseBlocks(src) {
       let j = i - 1
       while (j >= 0 && lines[j].trim() === '') j--
       if (j >= 0 && /^\}$/.test(lines[j].trim())) {
-        // Orphan else! Skip it and its entire block
+        // Found orphan else! Remove the preceding `}` too
+        // Remove the last line from output (the orphan `}`)
+        out.pop()
+        // Skip the else block entirely
         let depth = 0
         let k = i
         let foundOpen = false
