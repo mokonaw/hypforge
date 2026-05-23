@@ -285,8 +285,10 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/^[ \t]*proximityAction\s*;?[ \t]*\n/gm, '')
   // Remove empty `if (proximityAction) { }` or `if (proximityAction) {\n}` blocks
   scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*proximityAction\s*\)\s*\{[\s\n]*\}[ \t]*\n?/g, '')
-  // Remove `try { if (proximityAction) app.remove(proximityAction) } catch(e) {}` in onDispose
-  scriptSource = scriptSource.replace(/[ \t]*try\s*\{[^}]*proximityAction[^}]*\}\s*catch[^}]*\}[ \t]*\n?/g, '')
+  // Remove `try { ... } catch(e) {}` blocks referencing removed vars (proximityAction, triggerAction, leaveTimer)
+  scriptSource = scriptSource.replace(/[ \t]*try\s*\{[^}]*(?:proximityAction|triggerAction|leaveTimer)[^}]*\}\s*catch[^}]*\}[ \t]*\n?/g, '')
+  // Remove orphan `catch {} }` or `catch(e) {} }` left after partial try/catch removal
+  scriptSource = scriptSource.replace(/[ \t]*catch\s*(?:\([^)]*\))?\s*\{[^}]*\}[ \t]*\n/g, '')
   // Fix misindented closing brace left after removing content inside an if-block:
   // Pattern: any line ending with `= null` or `= null;` followed by a `}` with MORE indentation
   scriptSource = scriptSource.replace(/([ \t]*\w[^\n]*=\s*null\s*;?[ \t]*\n)([ \t]+\}[ \t]*\n)/g, (m, prev, brace) => {
@@ -297,14 +299,10 @@ function patchScript(scriptSource) {
   // Clean up if-blocks whose only remaining content is `varName = null` assignments
   // (happens when proximity code was inside the block and got removed, leaving just null assignments + misindented `}`)
   scriptSource = removeDeadIfBlocks(scriptSource)
-  // Remove orphan `} else { ... }` or `else { ... }` blocks after a `return` statement
-  // These appear when the AI generates `return\n} else {` patterns
-  scriptSource = scriptSource.replace(/(\breturn\s*;?[ \t]*\n)([ \t]*\}\s*\n)?([ \t]*)else\s*\{([^}]*)\}/g, (m, ret, closeBrace, indent, body) => {
-    // Keep only the return, drop the else block entirely
-    return ret + (closeBrace || '')
-  })
-  // Also handle bare `else {` that immediately follows a line ending the prior if-block
-  scriptSource = scriptSource.replace(/^[ \t]*else\s*\{([^}]*)\}[ \t]*\n/gm, '')
+  // Remove orphan `else { ... }` blocks — these are left when the preceding `if` block ends with
+  // a `return` and the `else` branch becomes unreachable dead code after proximity removal.
+  // Use brace-counting to handle multi-line else bodies correctly.
+  scriptSource = removeOrphanElseBlocks(scriptSource)
 
   // Fix screenshotView.visible = !isNear → always visible (proximity removed)
   scriptSource = scriptSource.replace(/\bscreenshotView\.visible\s*=\s*!isNear\b/g, 'screenshotView.visible = true')
@@ -331,6 +329,38 @@ function patchScript(scriptSource) {
   }
 
   return scriptSource
+}
+
+/**
+ * Remove orphan `else { ... }` blocks that follow a `return` statement.
+ * Also removes bare `else { ... }` blocks left behind after proximity removal.
+ * Uses brace-counting to handle multi-line bodies correctly.
+ */
+function removeOrphanElseBlocks(src) {
+  // Match any `else {` (possibly with leading whitespace), brace-count to find end, remove
+  const pattern = /[ \t]*\belse\s*\{/g
+  let result = src
+  let match
+  while ((match = pattern.exec(result)) !== null) {
+    const start = match.index
+    let depth = 0
+    let i = start
+    let foundOpen = false
+    while (i < result.length) {
+      if (result[i] === '{') { depth++; foundOpen = true }
+      else if (result[i] === '}') { depth-- }
+      if (foundOpen && depth === 0) {
+        let end = i + 1
+        // consume optional trailing newline
+        while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
+        result = result.slice(0, start) + result.slice(end)
+        pattern.lastIndex = 0
+        break
+      }
+      i++
+    }
+  }
+  return result
 }
 
 /**
