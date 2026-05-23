@@ -367,10 +367,18 @@ app.onDispose = () => { try { app.remove(holder) } catch {} }
 - L'appel initial à applyAll() peut être direct : applyAll() (le wrapping try/catch masque les vraies erreurs, éviter sauf si explicitement nécessaire).
 
 - RÈGLES ABSOLUES pour la hiérarchie des nœuds :
-  1. Si tu crées un group (holder), TOUS les enfants vont dans holder.add(), pas dans app.add()
-  2. Les prim doivent avoir scale et position dans leur config initiale, pas via .scale.set() après
-  3. Ne jamais ajouter de props dans app.configure() pour des fonctionnalités qui ne sont pas implémentées dans le script (ex: proximityDistance sans boucle update)
-  4. app.keepActive = true se place TOUJOURS juste après if (!world.isClient) return, avant app.configure()`
+  1. app.create('prim', {...}) ET app.create('webview') DOIVENT TOUJOURS être suivis immédiatement de app.add(varName) AVANT tout holder.add(varName) — c'est obligatoire sinon crash à l'import.
+     Exemple CORRECT :
+       screenshotView = app.create('prim', { type: 'box', scale: [W, H, 0.02], ... })
+       app.add(screenshotView)      // ← OBLIGATOIRE
+       holder.add(screenshotView)   // ← seulement après app.add()
+     Exemple INCORRECT (crash) :
+       screenshotView = app.create('prim', { ... })
+       holder.add(screenshotView)   // ← sans app.add() préalable = CRASH
+  2. Si tu crées un group (holder), TOUS les enfants vont d'abord dans app.add() puis holder.add()
+  3. Les prim doivent avoir scale et position dans leur config initiale, pas via .scale.set() après
+  4. Ne jamais ajouter de props dans app.configure() pour des fonctionnalités qui ne sont pas implémentées dans le script (ex: proximityDistance sans boucle update)
+  5. app.keepActive = true se place TOUJOURS juste après if (!world.isClient) return, avant app.configure()`
 
 export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated, prompt, onPromptChange }) {
   const [loading, setLoading] = useState(false)

@@ -134,6 +134,23 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/\bapp\.add\(placeholderPane\)/g, 'holder.add(placeholderPane)')
   scriptSource = scriptSource.replace(/\bapp\.remove\(placeholderPane\)/g, 'holder.remove(placeholderPane)')
 
+  // CRITICAL: app.create('prim', ...) MUST be followed by app.add(varName) before any holder.add(varName)
+  // Pattern: find  `varName = app.create('prim', ...)\n  holder.add(varName)`  → inject app.add(varName) between
+  scriptSource = scriptSource.replace(
+    /(\b(\w+)\s*=\s*app\.create\(\s*'prim'[\s\S]*?\))\s*\n([ \t]*)(holder\.add\(\2\))/g,
+    (match, creation, varName, indent, holderAdd) => {
+      // Only inject if app.add(varName) is not already present right after creation
+      return `${creation}\n${indent}app.add(${varName})\n${indent}${holderAdd}`
+    }
+  )
+  // Also handle webview created inline and directly added to holder without app.add()
+  scriptSource = scriptSource.replace(
+    /(\b(\w+)\s*=\s*app\.create\(\s*'webview'\s*\))\s*\n([ \t]*)(holder\.add\(\2\))/g,
+    (match, creation, varName, indent, holderAdd) => {
+      return `${creation}\n${indent}app.add(${varName})\n${indent}${holderAdd}`
+    }
+  )
+
   // Remove dead proximity/volume variables — only if NOT used elsewhere
   // isNear: only remove declaration if the functions that use it (showNear/showFar) are also gone
   const usesIsNear = /\bisNear\b/.test(scriptSource.replace(/^[ \t]*let\s+isNear\s*=[^\n]+\n/m, ''))
