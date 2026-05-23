@@ -352,7 +352,10 @@ function removeOrphanElseBlocks(src) {
   const pattern = /(\breturn\s*;?[ \t]*\n[ \t\n]*\}?[ \t\n]*)else\s*\{/g
   let result = src
   let match
-  while ((match = pattern.exec(result)) !== null) {
+  let maxIterations = 50
+  let iterations = 0
+  while ((match = pattern.exec(result)) !== null && iterations < maxIterations) {
+    iterations++
     // Keep the `return` line, remove from `else {` onward (brace-counted)
     const elseStart = match.index + match[1].length
     let depth = 0
@@ -365,12 +368,13 @@ function removeOrphanElseBlocks(src) {
         let end = i + 1
         while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
         result = result.slice(0, elseStart) + result.slice(end)
-        pattern.lastIndex = 0
+        pattern.lastIndex = 0 // reset to start since string changed
         break
       }
       i++
     }
   }
+  console.log('[removeOrphanElseBlocks] Iterations:', iterations, 'Match found:', iterations > 0)
   return result
 }
 
