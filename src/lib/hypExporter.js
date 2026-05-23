@@ -768,10 +768,11 @@ export function getPatchedScript(rawScript) {
   let s = patchScript(rawScript)
   s = ensureIsClientGuard(s)
   
-  // Debug: log final script structure
+  // Debug: full script + structure check
   const lines = s.split('\n')
-  console.log('[getPatchedScript] Total lines:', lines.length)
-  console.log('[getPatchedScript] Last 10 lines:', lines.slice(-10))
+  console.log('[getPatchedScript] === FULL SCRIPT ===')
+  console.log(s)
+  console.log('[getPatchedScript] === END ===')
   
   return s
 }
