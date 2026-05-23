@@ -304,8 +304,9 @@ function patchScript(scriptSource) {
   // Use brace-counting to handle multi-line else bodies correctly.
   scriptSource = removeOrphanElseBlocks(scriptSource)
   // Remove orphan `}catch {} }` — when a try/catch was partially removed and left `}catch {}`
+  // Also handles double `catch {}` (e.g. `} catch {} catch {} }`)
   // Must run BEFORE removeOrphanClosingBraces so the stray `}` it leaves behind is caught
-  scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n?/g, '\n')
+  scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}(?:\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\})*\s*\n?/g, '\n')
   // After else/catch removal, lone `}` lines may remain. Remove any that would bring brace depth negative.
   scriptSource = removeOrphanClosingBraces(scriptSource)
 
@@ -339,12 +340,12 @@ function patchScript(scriptSource) {
 /**
  * Remove orphan `else { ... }` blocks that are left as dead code after proximity removal.
  * Only removes `else` blocks that immediately follow a line ending with `return` or `return;`
- * (possibly with a blank line in between). Leaves all other else blocks intact.
+ * (possibly with blank lines and/or a closing `}` in between). Leaves all other else blocks intact.
  */
 function removeOrphanElseBlocks(src) {
-  // Pattern: `return` (end of line) → optional blank lines → `else {`
+  // Pattern: `return` → optional whitespace/blank lines → optional `}` (closing brace) → optional whitespace/blank lines → `else {`
   // The `else {` and its body are unreachable dead code → remove
-  const pattern = /(\breturn\s*;?[ \t]*\n(?:[ \t]*\n)*)[ \t]*else\s*\{/g
+  const pattern = /(\breturn\s*;?[ \t]*\n[ \t\n]*\}?[ \t\n]*)else\s*\{/g
   let result = src
   let match
   while ((match = pattern.exec(result)) !== null) {
