@@ -375,36 +375,46 @@ function removeOrphanElseBlocks(src) {
 }
 
 /**
- * Remove ALL stray `else {` blocks that follow a closing brace with blank lines between them.
- * If `else {` is separated from `}` by blank lines, it's orphaned dead code — remove it.
+ * Remove ALL stray `else {` blocks — aggressive cleanup.
+ * Scans line-by-line: if a line contains only `else {` (with optional leading whitespace)
+ * and the previous non-empty line was a closing `}`, remove the else block.
  */
 function removeStrayElseBlocks(src) {
-  // Pattern: `}\n   \n   else {` — closing brace, then blank/whitespace lines, then `else {`
-  // This catches orphaned else blocks left after proximity code removal
-  const pattern = /\}\n[ \t]*\n[ \t]*else\s*\{/g
-  let result = src
-  let match
-  while ((match = pattern.exec(result)) !== null) {
-    const bracePos = match.index
-    const elseStart = match.index + match[0].indexOf('else')
-    let depth = 0
-    let i = elseStart
-    let foundOpen = false
-    while (i < result.length) {
-      if (result[i] === '{') { depth++; foundOpen = true }
-      else if (result[i] === '}') { depth-- }
-      if (foundOpen && depth === 0) {
-        let end = i + 1
-        while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
-        // Remove from the closing `}` to end of else block
-        result = result.slice(0, bracePos + 1) + result.slice(end)
-        pattern.lastIndex = 0
-        break
+  const lines = src.split('\n')
+  const out = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    const trimmed = line.trim()
+    // Check if this line is `else {` (possibly with leading whitespace)
+    if (/^else\s*\{/.test(trimmed)) {
+      // Look back: was the previous non-empty line a closing `}`?
+      let j = i - 1
+      while (j >= 0 && lines[j].trim() === '') j--
+      if (j >= 0 && /^\}$/.test(lines[j].trim())) {
+        // Orphan else! Skip it and its entire block
+        let depth = 0
+        let k = i
+        let foundOpen = false
+        while (k < lines.length) {
+          const l = lines[k]
+          for (const ch of l) {
+            if (ch === '{') { depth++; foundOpen = true }
+            else if (ch === '}') { depth-- }
+          }
+          if (foundOpen && depth === 0) {
+            i = k + 1
+            break
+          }
+          k++
+        }
+        continue // don't add this else block to output
       }
-      i++
     }
+    out.push(line)
+    i++
   }
-  return result
+  return out.join('\n')
 }
 
 /**
