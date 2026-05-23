@@ -194,23 +194,51 @@ function patchScript(scriptSource) {
     scriptSource = removeFunctionDef(scriptSource, 'getLocalPlayer')
   }
   scriptSource = removeFunctionDef(scriptSource, 'scheduleProximityCheck')
+  // Remove the entire setTimeout-based proximity chain
+  scriptSource = removeFunctionDef(scriptSource, 'doProximityCheck')
+  scriptSource = removeFunctionDef(scriptSource, 'setupProximityLoop')
+  scriptSource = removeFunctionDef(scriptSource, 'getLocalPlayerPosition')
+  scriptSource = removeFunctionDef(scriptSource, 'getAppWorldPosition')
+  scriptSource = removeFunctionDef(scriptSource, 'dist3')
+  // showWebview/hideWebview only make sense when driven by proximity loop → remove them
+  scriptSource = removeFunctionDef(scriptSource, 'showWebview')
+  scriptSource = removeFunctionDef(scriptSource, 'hideWebview')
   // setupActions uses proxDist which is removed → remove it too
   scriptSource = removeFunctionDef(scriptSource, 'setupActions')
   scriptSource = removeFunctionDef(scriptSource, 'removeActions')
 
-  // After removing scheduleProximityCheck/setupActions, remove their calls and dead vars
-  scriptSource = scriptSource.replace(/^[ \t]*scheduleProximityCheck\(\s*\)\s*;?[ \t]*\n/m, '')
+  // After removing proximity/action functions, remove all their call sites and dead vars
+  scriptSource = scriptSource.replace(/^[ \t]*scheduleProximityCheck\([^)]*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*doProximityCheck\([^)]*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*setupProximityLoop\([^)]*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*setupActions\(\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*removeActions\(\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+actionNear\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+actionFar\s*=\s*[^\n]+\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+proximityTimer\s*=\s*[^\n]+\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+lastPlayerPos\s*=\s*[^\n]+\n/m, '')
+  // Remove clearTimeout(proximityTimer) calls and related onDispose references to proximityTimer
+  scriptSource = scriptSource.replace(/^[ \t]*(?:if\s*\([^)]*proximityTimer[^)]*\)\s*\{[^}]*\}|clearTimeout\s*\(\s*proximityTimer\s*\)\s*;?\s*proximityTimer\s*=\s*null\s*;?)[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*proximityTimer\s*=\s*null\s*;?[ \t]*\n/gm, '')
+  // Remove the entire if-block pattern: if (proximityTimer !== null) { clearTimeout... }
+  scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*proximityTimer\s*!==\s*null\s*\)\s*\{[\s\S]*?clearTimeout[^}]*\}[ \t]*\n?/g, '')
+  // Remove nearDist/farDist variable declarations inside applyAll when they're only used for removed functions
+  // (keep them if proximityAction is still present — we'll clean up proximityAction block next)
+  // Remove the entire proximityAction creation block (action used only for proximity, which we removed)
+  scriptSource = scriptSource.replace(
+    /[ \t]*if\s*\(\s*proximityAction\s*\)\s*\{[\s\S]*?\}\s*\n[ \t]*const\s+nearDist[\s\S]*?setupProximityLoop[^\n]*\n?/g,
+    ''
+  )
 
   // Remove redundant try/catch around app.get('Block')
   scriptSource = scriptSource.replace(/[ \t]*try\s*\{\s*const block = app\.get\([^)]+\)[^\n]*\n?\s*\}\s*catch\([^)]*\)\s*\{\s*\}\s*\n?/g, '')
 
-  // Remove proximityDistance prop from configure() since proximity logic was removed
+  // Remove proximity-related props from configure() since proximity logic was removed
   scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]sec_proximity['"][^}]*\},?\n?/g, '')
   scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]proximityDistance['"][^}]*\},?\n?/g, '')
+  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]nearDistance['"][^}]*\},?\n?/g, '')
+  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]farDistance['"][^}]*\},?\n?/g, '')
+  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]autoplay['"][^}]*\},?\n?/g, '')
 
   // Remove app.keepActive — will be re-inserted at the correct position by ensureIsClientGuard
   scriptSource = scriptSource.replace(/^[ \t]*app\.keepActive\s*=\s*true[ \t]*\n/m, '')
@@ -220,6 +248,22 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/^[ \t]*getProxDist\(\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*setupVolumeCheck\(\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*checkVolume\(\s*\)\s*;?[ \t]*\n/gm, '')
+  // Remove any clearTimeout(proximityTimer) that may remain anywhere in the script
+  scriptSource = scriptSource.replace(/^[ \t]*clearTimeout\s*\(\s*proximityTimer\s*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*proximityTimer\s*=\s*null\s*;?[ \t]*\n/gm, '')
+  // Remove orphan proximityAction variable declaration
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+proximityAction\s*=\s*[^\n]+\n/m, '')
+  // Remove app.remove(proximityAction) in onDispose
+  scriptSource = scriptSource.replace(/^[ \t]*(?:try\s*\{[^}]*\}\s*catch[^}]*\}|if\s*\([^)]*proximityAction[^)]*\)[^\n]*|app\.remove\s*\(\s*proximityAction\s*\)[^\n]*)[ \t]*\n/gm, '')
+  // Fix screenshotView.visible = !isNear → always visible (proximity removed)
+  scriptSource = scriptSource.replace(/\bscreenshotView\.visible\s*=\s*!isNear\b/g, 'screenshotView.visible = true')
+  // Remove `if (isNear) { ... }` multi-line blocks that re-create webview based on proximity
+  scriptSource = removeIfIsNearBlocks(scriptSource)
+  // Remove nearDist/farDist const declarations (only used in removed proximity code)
+  scriptSource = scriptSource.replace(/^[ \t]*const\s+nearDist\s*=[^\n]+\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*const\s+farDist\s*=[^\n]+\n/gm, '')
+  // isNear is now unused — remove its declaration
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+isNear\s*=\s*false[ \t]*\n/m, '')
 
   // Remove app.remove(X) inside removeXxx() functions for nodes that were never app.add()'d
   // (they're in a holder, so only holder.remove() is valid)
@@ -234,6 +278,36 @@ function patchScript(scriptSource) {
   }
 
   return scriptSource
+}
+
+/**
+ * Remove `if (isNear) { ... }` (and `if (!isNear) { ... }`) multi-line blocks.
+ */
+function removeIfIsNearBlocks(src) {
+  // Match: if (isNear) { or if (!isNear) {
+  const pattern = /if\s*\(\s*!?\s*isNear\s*\)\s*\{/g
+  let result = src
+  let match
+  while ((match = pattern.exec(result)) !== null) {
+    const start = match.index
+    let depth = 0
+    let i = start
+    let foundOpen = false
+    while (i < result.length) {
+      if (result[i] === '{') { depth++; foundOpen = true }
+      else if (result[i] === '}') { depth-- }
+      if (foundOpen && depth === 0) {
+        let end = i + 1
+        // consume optional trailing newline
+        while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
+        result = result.slice(0, start) + result.slice(end)
+        pattern.lastIndex = 0
+        break
+      }
+      i++
+    }
+  }
+  return result
 }
 
 /**
