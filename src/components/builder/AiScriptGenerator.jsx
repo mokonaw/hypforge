@@ -355,6 +355,9 @@ app.onDispose = () => { try { app.remove(holder) } catch {} }
 - Pour les webviews : NE PAS créer si src est vide.
 - Utiliser app.onDispose pour nettoyer les nodes et effets de bord.
 - N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne — inutile et source de confusion.
+- JAMAIS écrire if (condition) { ... return } else { ... } — le else est du code mort après un return. Écrire plutôt :
+    if (!condition) { ... return }
+    // suite normale ici (pas de else)
 
 - TOUJOURS sécuriser l'accès aux props de type 'file' (assets uploadés) avec try/catch :
     function getFileUrl(propVal) {
