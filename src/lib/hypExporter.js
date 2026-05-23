@@ -385,7 +385,9 @@ function removeStrayElseBlocks(src) {
   const pattern = /\breturn\s*;?[ \t]*\n(?:[ \t]*\n)*[ \t]*\}[ \t]*\n(?:[ \t]*\n)*[ \t]*else\s*\{/g
   let result = src
   let match
-  while ((match = pattern.exec(result)) !== null) {
+  let iterations = 0
+  while ((match = pattern.exec(result)) !== null && iterations < 10) {
+    iterations++
     // Find where the `}` is (end of if-block)
     const ifBlockEnd = match.index + match[0].indexOf('}') + 1
     // Find where the `else {` starts
@@ -408,6 +410,7 @@ function removeStrayElseBlocks(src) {
       i++
     }
   }
+  console.log('[removeStrayElseBlocks] Iterations:', iterations, 'Match found:', iterations > 0)
   return result
 }
 
