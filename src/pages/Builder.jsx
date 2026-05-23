@@ -92,14 +92,7 @@ export default function Builder() {
     setBusy(true)
     try {
       // Merge props values into script (simple string replacement)
-      let finalScript = script
-      // Prepend props injection so props.xxx are available at runtime
-      if (Object.keys(propsValues).length > 0) {
-        const propsInit = `const props = ${JSON.stringify(propsValues)}\n\n`
-        finalScript = propsInit + finalScript
-      }
-
-      const scriptBlob = new Blob([finalScript], { type: 'application/javascript' })
+      const scriptBlob = new Blob([script], { type: 'application/javascript' })
       const scriptAsFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
 
       const file = await buildHypFile({
