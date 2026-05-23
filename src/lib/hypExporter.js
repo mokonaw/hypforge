@@ -554,7 +554,19 @@ export async function buildHypFile({
     )
   }
 
-  // --- CRITICAL: Encode script to bytes FIRST to get accurate size ---
+  // === CRITICAL FIXES ===
+  // 1. Trim whitespace
+  scriptSource = scriptSource.trim()
+  
+  // 2. Remove ALL trailing orphan closing braces (corruption pattern)
+  // Loop to remove multiple } lines at the end
+  let prevLength = 0
+  while (prevLength !== scriptSource.length && /\n[ \t]*\}[ \t]*$/.test(scriptSource)) {
+    prevLength = scriptSource.length
+    scriptSource = scriptSource.replace(/\n[ \t]*\}[ \t]*$/, '')
+  }
+  
+  // 3. Encode to bytes IMMEDIATELY after cleanup
   const encoder = new TextEncoder()
   const scriptBytes = encoder.encode(scriptSource)
   const scriptHash = await sha256Hex(scriptBytes.buffer)
@@ -564,8 +576,8 @@ export async function buildHypFile({
   assets.push({
     type: 'script',
     url: scriptUrl,
-    size: scriptBytes.length, // ✅ Use actual byte length, not string.length or file.size
-    buffer: scriptBytes.buffer,
+    size: scriptBytes.length, // ✅ Use actual byte length
+    buffer: scriptBytes.buffer.slice(0, scriptBytes.byteLength), // ✅ Clean buffer slice
   })
 
   // --- Props: extract from script configure() + merge with effectParams ---
