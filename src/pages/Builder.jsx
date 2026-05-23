@@ -56,8 +56,9 @@ export default function Builder() {
   // Load existing app if ?id=...
   useEffect(() => {
     if (!loadId) return
-    base44.entities.HypApp.filter({ id: loadId }).then(apps => {
-      const saved = apps[0]
+    base44.functions.invoke('getMyApps', { anonymous_id: getAnonymousId() }).then(res => {
+      const apps = res.data?.apps || []
+      const saved = apps.find(a => a.id === loadId)
       if (!saved) return
       setMeta({ name: saved.name || '', description: saved.description || '', author: saved.author || '' })
       if (saved.ai_prompt) setAiPrompt(saved.ai_prompt)
