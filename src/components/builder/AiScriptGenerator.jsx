@@ -282,76 +282,165 @@ function buildEmbedUrl(rawUrl, autoplay) {
   return url
 }
 
-=== EXEMPLE — webview YouTube/Twitch ===
+=== EXEMPLE COMPLET — webview avec proximité (COPY-COLLER CE TEMPLATE) ===
 if (!world.isClient) return
 app.keepActive = true
 
 app.configure([
-  { type: 'text', key: 'src', label: 'URL YouTube/Twitch/Web', initial: '' },
+  { type: 'text', key: 'url', label: 'URL du site', initial: '' },
   { type: 'number', key: 'width', label: 'Largeur (m)', initial: 3 },
   { type: 'number', key: 'factor', label: 'Résolution', initial: 150 },
+  { type: 'number', key: 'proximityDistance', label: 'Distance proximité (m)', initial: 4 },
+  { type: 'toggle', key: 'autoplay', label: 'Lecture auto', trueLabel: 'Oui', falseLabel: 'Non', initial: false },
 ])
 
-  const holder = app.create('group')
-  app.add(holder)
-  let webview = null
-  let placeholder = null
+const holder = app.create('group')
+app.add(holder)
 
-  function buildEmbedUrl(rawUrl) {
-    const url = String(rawUrl || '').trim()
-    if (!url) return ''
-    const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)
-    if (ytMatch) return 'https://www.youtube.com/embed/' + ytMatch[1] + '?autoplay=1&muted=1&rel=0'
-    const twitchChannel = url.match(/twitch\.tv\/([A-Za-z0-9_]+)$/)
-    if (twitchChannel) return 'https://player.twitch.tv/?channel=' + twitchChannel[1] + '&parent=hyperfy.io'
-    const twitchVod = url.match(/twitch\.tv\/videos\/([0-9]+)/)
-    if (twitchVod) return 'https://player.twitch.tv/?video=' + twitchVod[1] + '&parent=hyperfy.io'
-    return url
+let webview = null
+let screenshotView = null
+let proximityAction = null
+let leaveAction = null
+let isNear = false
+let audioNode = null
+
+function getFileUrl(val) {
+  try {
+    if (!val) return ''
+    if (typeof val === 'string') return val.trim()
+    if (val.url) return String(val.url).trim()
+  } catch(e) {}
+  return ''
+}
+
+function buildEmbedUrl(rawUrl, autoplay) {
+  const url = String(rawUrl || '').trim()
+  if (!url) return ''
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+  if (ytMatch) return 'https://www.youtube.com/embed/' + ytMatch[1] + '?autoplay=' + (autoplay ? '1' : '0') + '&muted=1&rel=0'
+  const twitchChannel = url.match(/twitch\.tv\/([A-Za-z0-9_]+)$/)
+  if (twitchChannel) return 'https://player.twitch.tv/?channel=' + twitchChannel[1] + '&parent=hyperfy.io'
+  const twitchVod = url.match(/twitch\.tv\/videos\/([0-9]+)/)
+  if (twitchVod) return 'https://player.twitch.tv/?video=' + twitchVod[1] + '&parent=hyperfy.io'
+  return url
+}
+
+function getConfig() {
+  const W = Math.max(0.1, Number(config.width ?? 3))
+  const aspect = 1.7778
+  const H = W / aspect
+  const factor = Math.min(800, Math.max(50, Number(config.factor ?? 150)))
+  const proxDist = Math.max(1, Number(config.proximityDistance ?? 4))
+  const autoplay = !!config.autoplay
+  const rawUrl = getFileUrl(config.url)
+  const embedUrl = buildEmbedUrl(rawUrl, autoplay)
+  return { W, H, factor, proxDist, autoplay, rawUrl, embedUrl }
+}
+
+function showWebview() {
+  const { W, H, factor, embedUrl } = getConfig()
+  if (!embedUrl) { showScreenshot(); return }
+  if (screenshotView) screenshotView.active = false
+  if (!webview) { webview = app.create('webview'); holder.add(webview) }
+  webview.space = 'world'
+  webview.src = embedUrl
+  webview.width = W
+  webview.height = H
+  webview.factor = factor
+  webview.doubleside = true
+  webview.active = true
+}
+
+function showScreenshot() {
+  const { W, H } = getConfig()
+  if (webview) { holder.remove(webview); webview = null }
+  if (!screenshotView) {
+    screenshotView = app.create('prim')
+    screenshotView.type = 'box'
+    screenshotView.scale.set(W, H, 0.02)
+    screenshotView.color = '#333333'
+    holder.add(screenshotView)
   }
+  if (screenshotView) screenshotView.active = true
+}
 
-  function applyAll() {
-    const src = buildEmbedUrl(config.src)
-    const W = Math.max(0.1, Number(config.width ?? 3))
-    const H = W / (16/9)
-    const factor = Math.max(50, Math.min(800, Number(config.factor ?? 150)))
+function updateAudioVolume() {
+  if (!audioNode) return
+  if (isNear) { audioNode.volume = 1 } else { audioNode.volume = 0 }
+}
 
-    holder.position.set(0, H/2, 0)
-
-    if (src) {
-      if (placeholder) { holder.remove(placeholder); placeholder = null }
-      if (!webview) { webview = app.create('webview'); holder.add(webview) }
-      webview.space = 'world'
-      webview.src = src
-      webview.width = W
-      webview.height = H
-      webview.factor = factor
-      webview.doubleside = true
-      webview.active = true
-    } else {
-      if (webview) { holder.remove(webview); webview = null }
-      if (!placeholder) {
-        placeholder = app.create('prim')
-        placeholder.type = 'box'
-        placeholder.scale.set(W, H, 0.02)
-        placeholder.color = '#444444'
-        placeholder.castShadow = false
-        placeholder.receiveShadow = false
-        holder.add(placeholder)
-      }
+function setupProximityActions() {
+  if (proximityAction) { app.remove(proximityAction); proximityAction = null }
+  if (leaveAction) { app.remove(leaveAction); leaveAction = null }
+  const { proxDist, embedUrl } = getConfig()
+  if (!embedUrl) return
+  proximityAction = app.create('action')
+  proximityAction.label = 'Afficher le site'
+  proximityAction.distance = proxDist
+  proximityAction.duration = 0
+  proximityAction.position.set(0, getConfig().H / 2, 0)
+  proximityAction.onTrigger = () => {
+    if (!isNear) {
+      isNear = true
+      showWebview()
+      updateAudioVolume()
+      app.remove(proximityAction)
+      proximityAction = null
+      setupLeaveAction()
     }
   }
-  applyAll()
-  app.on('config', () => applyAll())
+  app.add(proximityAction)
 }
+
+function setupLeaveAction() {
+  if (proximityAction) { app.remove(proximityAction); proximityAction = null }
+  if (leaveAction) { app.remove(leaveAction); leaveAction = null }
+  leaveAction = app.create('action')
+  leaveAction.label = 'Masquer'
+  leaveAction.distance = 2
+  leaveAction.duration = 0
+  leaveAction.position.set(0, getConfig().H / 2, 0)
+  leaveAction.onTrigger = () => {
+    if (isNear) {
+      isNear = false
+      showScreenshot()
+      updateAudioVolume()
+      app.remove(leaveAction)
+      leaveAction = null
+      setupProximityActions()
+    }
+  }
+  app.add(leaveAction)
+}
+
+function applyAll() {
+  const { embedUrl } = getConfig()
+  if (isNear) {
+    showWebview()
+  } else {
+    showScreenshot()
+  }
+  if (embedUrl && !proximityAction && !leaveAction) setupProximityActions()
+}
+
+applyAll()
+app.on('config', () => {
+  isNear = false
+  applyAll()
+})
 
 ⛔ NE PAS UTILISER app.on('update') — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
 ⛔ NE PAS UTILISER world.getPlayer() / world.entities.getLocalPlayer() — N'EXISTE PAS dans Hyperfy V2, CRASHE.
-⛔ NE PAS UTILISER setTimeout pour simuler une boucle de proximité — provoque des comportements imprévisibles.
-⛔ NE PAS déclarer des variables (isNear, isNearby, lastDist, volumeTimeout, etc.) liées à une fonctionnalité non implémentable — code mort qui CRASHE.
-⛔ NE JAMAIS créer de fonctions setupVolumeCheck / checkVolume / updateVolume — webview.volume n'existe pas dans Hyperfy V2.
-⛔ NE JAMAIS lire props.proximityDistance sans le déclarer dans app.configure() — et si tu ne peux pas implémenter la logique de proximité, ne déclare pas ce champ du tout.
-⛔ Si l'utilisateur demande une détection de proximité, propose une action cliquable via app.create('action') à la place.
-⛔ NE JAMAIS appeler une fonction qui n'est pas définie dans le script (ex: updateVolume, scheduleProximityCheck, setupVolumeCheck si non définies).
+
+✅ LOGIQUE DE PROXIMITÉ — REQUIERT CES VARIABLES ET FONCTIONS :
+  - let isNear = false (déclaration OBLIGATOIRE)
+  - let proximityAction = null (déclaration OBLIGATOIRE)
+  - function getConfig() { ... const proxDist = ...; return { proxDist, ... } } (proxDist DOIT être défini)
+  - function showWebview() { ... } (OBLIGATOIRE si utilisé dans applyAll/onTrigger)
+  - function setupProximityActions() { ... proximityAction = app.create('action') ... } (corps COMPLET requis)
+  - function setupLeaveAction() { ... leaveAction = app.create('action') ... } (corps COMPLET requis)
+  - function updateAudioVolume() { if (isNear) { ... } else { ... } } (if/else COMPLET requis)
+  - app.on('config', () => { isNear = false; applyAll() }) (reset isNear OBLIGATOIRE)
 
 === CE QUI N'EXISTE PAS — NE JAMAIS UTILISER ===
   ❌ setInterval / clearInterval — N'EXISTENT PAS, utiliser app.on('update')
