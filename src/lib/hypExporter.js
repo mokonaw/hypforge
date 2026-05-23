@@ -376,18 +376,21 @@ function removeOrphanElseBlocks(src) {
 
 /**
  * Remove stray `else {` blocks that follow a closing brace after a return.
- * Handles cases where the `}` is on its own line with indentation before `else`.
+ * Handles cases where the `}` is on its own line with indentation before `else`,
+ * including multiple blank lines between `}` and `else`.
  */
 function removeStrayElseBlocks(src) {
-  // Pattern: `}\n   else {` where the `}` closes a block that ended with `return`
-  // We look for: `}\n` followed by whitespace then `else {`
-  const pattern = /\}\n([ \t]*)else\s*\{/g
+  // Pattern: `}\n...\n   else {` where `}` closes a block that ended with `return`
+  // Match: `}` at end of line → any number of blank/whitespace lines → `else {`
+  const pattern = /\}\n[ \t\n]*else\s*\{/g
   let result = src
   let match
   while ((match = pattern.exec(result)) !== null) {
-    // Check if the preceding block ended with `return`
-    const beforeBrace = result.slice(Math.max(0, match.index - 200), match.index)
+    // Check if the preceding ~150 chars end with `return\n...}`
+    const beforeBrace = result.slice(Math.max(0, match.index - 150), match.index)
     if (/\breturn\s*;?[ \t]*\n[ \t]*\}$/.test(beforeBrace)) {
+      // Found orphan else after return block — remove everything from `}` to end of else block
+      const bracePos = match.index
       const elseStart = match.index + match[0].indexOf('else')
       let depth = 0
       let i = elseStart
@@ -398,7 +401,8 @@ function removeStrayElseBlocks(src) {
         if (foundOpen && depth === 0) {
           let end = i + 1
           while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
-          result = result.slice(0, match.index + match[0].indexOf('else') - 1) + result.slice(end)
+          // Remove from the closing `}` of the if-block to end of else block
+          result = result.slice(0, bracePos + 1) + result.slice(end)
           pattern.lastIndex = 0
           break
         }
