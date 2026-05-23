@@ -274,6 +274,21 @@ function patchScript(scriptSource) {
     const braceIndent = brace.match(/^([ \t]*)/)[1].length
     return braceIndent > prevIndent ? prev : m
   })
+  // Remove empty if-blocks: `if (expr) {\n    varName = null\n      }` where the `}` is oddly indented
+  // More general: collapse any `if (...) {\n<content>\n}` where the closing `}` has MORE indent than the `if`
+  scriptSource = scriptSource.replace(
+    /^([ \t]*)if\s*\([^)]+\)\s*\{([\s\S]*?)\n([ \t]+)\}/gm,
+    (m, ifIndent, body, closeIndent) => {
+      // If closing `}` is MORE indented than the `if` keyword → it's a misformatted leftover block
+      if (closeIndent.length > ifIndent.length) {
+        // Check if body only contains `varName = null` assignments (dead code after patcher)
+        const bodyLines = body.split('\n').map(l => l.trim()).filter(l => l !== '')
+        const allNull = bodyLines.every(l => /^\w+\s*=\s*null\s*;?$/.test(l))
+        if (allNull) return ''
+      }
+      return m
+    }
+  )
   // Fix screenshotView.visible = !isNear → always visible (proximity removed)
   scriptSource = scriptSource.replace(/\bscreenshotView\.visible\s*=\s*!isNear\b/g, 'screenshotView.visible = true')
   // Remove `if (isNear) { ... }` / `if (!isNear) { ... }` multi-line blocks
