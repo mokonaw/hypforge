@@ -354,9 +354,9 @@ applyAll()
 - Utiliser app.onDispose pour nettoyer les nodes et effets de bord.
 - N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne.
 - JAMAIS écrire if (condition) { ... return } else { ... } — le else est du code mort après un return.
-- TOUJOURS utiliser `config.xxx` pour lire les valeurs configurables, JAMAIS `props.xxx`.
-- Supprimer `if (!world.isClient) return` et `app.keepActive = true` — inutile.
-- Supprimer `app.onDispose` — API non garantie.
+- TOUJOURS utiliser config.xxx pour lire les valeurs configurables, JAMAIS props.xxx.
+- Supprimer if (!world.isClient) return et app.keepActive = true — inutile.
+- Supprimer app.onDispose — API non garantie.
 
 - TOUJOURS sécuriser l'accès aux assets uploadés avec try/catch :
     function getFileUrl(propVal) {
