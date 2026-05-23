@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Download, Save, Loader2, FileCode2, Sparkles, Settings, Wand2, ChevronDown, ChevronUp, Eye, FileJson, FileSearch } from 'lucide-react'
+import { Download, Save, Loader2, FileCode2, Sparkles, Settings, Wand2, ChevronDown, ChevronUp, Eye, FileJson, FileSearch, Bug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { base44 } from '@/api/base44Client'
@@ -13,7 +13,7 @@ import PropsEditor from '@/components/builder/PropsEditor'
 import ScriptVisualizer from '@/components/builder/ScriptVisualizer'
 import HypAnalyzer from '@/components/builder/HypAnalyzer'
 
-import { buildHypFile, downloadFile } from '@/lib/hypExporter'
+import { buildHypFile, downloadFile, getPatchedScript } from '@/lib/hypExporter'
 import { getAnonymousId } from '@/lib/anonymousId'
 
 function Section({ step, title, icon: Icon, children, badge }) {
@@ -54,6 +54,7 @@ export default function Builder() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showVisualizer, setShowVisualizer] = useState(false)
   const [showAnalyzer, setShowAnalyzer] = useState(false)
+  const [patchedScript, setPatchedScript] = useState(null)
 
   // Load existing app if ?id=...
   useEffect(() => {
@@ -198,6 +199,10 @@ export default function Builder() {
             <FileSearch className="w-4 h-4 mr-2" />
             Analyser .hyp
           </Button>
+          <Button variant="outline" onClick={() => setPatchedScript(getPatchedScript(script))} disabled={script === EMPTY_SCRIPT} title="Voir le script après patch (ce qui sera dans le .hyp)">
+            <Bug className="w-4 h-4 mr-2" />
+            Script patché
+          </Button>
           <Button variant="outline" onClick={exportJson} disabled={!canExport}>
             <FileJson className="w-4 h-4 mr-2" />
             Exporter .json
@@ -303,6 +308,17 @@ export default function Builder() {
       )}
       {showAnalyzer && (
         <HypAnalyzer onClose={() => setShowAnalyzer(false)} />
+      )}
+      {patchedScript !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-4xl bg-card rounded-2xl border border-border shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <span className="font-semibold text-sm">Script patché — ce qui sera embarqué dans le .hyp</span>
+              <button onClick={() => setPatchedScript(null)} className="text-muted-foreground hover:text-foreground text-lg leading-none">✕</button>
+            </div>
+            <pre className="flex-1 overflow-auto p-6 text-xs font-mono text-foreground/90 whitespace-pre-wrap leading-relaxed">{patchedScript}</pre>
+          </div>
+        </div>
       )}
     </div>
   )

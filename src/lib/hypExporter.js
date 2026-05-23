@@ -135,21 +135,34 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/\bapp\.remove\(placeholderPane\)/g, 'holder.remove(placeholderPane)')
 
   // CRITICAL: Fix double-attach crashes
-  // 1. Remove duplicate consecutive app.add(X) calls
+  // 1. Remove duplicate consecutive app.add(X) calls (anywhere in the file)
   scriptSource = scriptSource.replace(
     /^([ \t]*app\.add\((\w+)\)[ \t]*)\n[ \t]*app\.add\(\2\)/gm,
     '$1'
   )
-  // 2. Remove app.add(X) when X is also added to a holder/group (double parenté = crash)
-  //    Scan all varNames that appear in both app.add(X) and holder.add(X) / group.add(X)
-  //    and strip the app.add() line entirely.
+  // 2. Remove ALL app.add(X) when X is ALSO added to a holder/group anywhere in the script
+  //    (double parenté = crash regardless of where in the code it appears)
   const holderAdded = new Set()
-  const holderAddPattern = /\b(?:holder|group)\s*\.add\(\s*(\w+)\s*\)/g
+  const holderAddPattern = /\b(?:\w+)\s*\.add\(\s*(\w+)\s*\)/g
   let hm
-  while ((hm = holderAddPattern.exec(scriptSource)) !== null) holderAdded.add(hm[1])
+  while ((hm = holderAddPattern.exec(scriptSource)) !== null) {
+    // Collect varNames added to any object that is NOT 'app' itself
+    // We'll filter out app.add() targets vs non-app.add() targets below
+    holderAdded.add(hm[1])
+  }
+  // Now remove from holderAdded any varNames that are ONLY added via app.add() (i.e. not in holder)
+  const appOnlyAdded = new Set()
+  const appAddPattern = /\bapp\s*\.add\(\s*(\w+)\s*\)/g
+  let am
+  while ((am = appAddPattern.exec(scriptSource)) !== null) appOnlyAdded.add(am[1])
+  // holderAdded = varNames added to BOTH app and something else → strip app.add()
   for (const varName of holderAdded) {
-    // Remove standalone app.add(varName) lines (but NOT app.add(holder) which is correct)
-    const re = new RegExp(`^[ \\t]*app\\.add\\(\\s*${varName}\\s*\\)[ \\t]*\\n`, 'gm')
+    if (!appOnlyAdded.has(varName)) continue // not added to app at all, nothing to strip
+    // Check it's also added to a non-app object
+    const nonAppRe = new RegExp(`\\b(?!app\\b)\\w+\\.add\\(\\s*${varName}\\s*\\)`)
+    if (!nonAppRe.test(scriptSource)) continue
+    // Strip all app.add(varName) lines
+    const re = new RegExp(`^[ \\t]*app\\.add\\(\\s*${varName}\\s*\\)[ \\t]*;?[ \\t]*\\n`, 'gm')
     scriptSource = scriptSource.replace(re, '')
   }
 
@@ -181,9 +194,16 @@ function patchScript(scriptSource) {
     scriptSource = removeFunctionDef(scriptSource, 'getLocalPlayer')
   }
   scriptSource = removeFunctionDef(scriptSource, 'scheduleProximityCheck')
+  // setupActions uses proxDist which is removed → remove it too
+  scriptSource = removeFunctionDef(scriptSource, 'setupActions')
+  scriptSource = removeFunctionDef(scriptSource, 'removeActions')
 
-  // After removing scheduleProximityCheck, remove any calls to it too
+  // After removing scheduleProximityCheck/setupActions, remove their calls and dead vars
   scriptSource = scriptSource.replace(/^[ \t]*scheduleProximityCheck\(\s*\)\s*;?[ \t]*\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*setupActions\(\s*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*removeActions\(\s*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+actionNear\s*=\s*[^\n]+\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+actionFar\s*=\s*[^\n]+\n/m, '')
 
   // Remove redundant try/catch around app.get('Block')
   scriptSource = scriptSource.replace(/[ \t]*try\s*\{\s*const block = app\.get\([^)]+\)[^\n]*\n?\s*\}\s*catch\([^)]*\)\s*\{\s*\}\s*\n?/g, '')
@@ -412,6 +432,16 @@ export async function buildHypFile({
   return new File([headerSize, headerBytes, ...fileBuffers], filename, {
     type: 'application/octet-stream',
   })
+}
+
+/**
+ * Returns the script as it will appear inside the .hyp (after all patches).
+ * Useful for debugging — call this to inspect what's actually embedded.
+ */
+export function getPatchedScript(rawScript) {
+  let s = patchScript(rawScript)
+  s = ensureIsClientGuard(s)
+  return s
 }
 
 /** Triggers a browser download for any File/Blob. */
