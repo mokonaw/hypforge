@@ -96,13 +96,13 @@ export default function HypAnalyzer({ onClose }) {
           parseErrors: gen.errors,
           blueprint: gen.header?.blueprint,
           assets: gen.assets?.map(a => ({ type: a.type, url: a.url, size: a.size, mime: a.mime })),
-          scriptPreview: gen.scriptContent?.slice(0, 1500),
+          script: gen.scriptContent,
         },
         reference: {
           parseErrors: ref.errors,
           blueprint: ref.header?.blueprint,
           assets: ref.assets?.map(a => ({ type: a.type, url: a.url, size: a.size, mime: a.mime })),
-          scriptPreview: ref.scriptContent?.slice(0, 1500),
+          script: ref.scriptContent,
         },
       }
 
@@ -142,11 +142,11 @@ ${JSON.stringify(summary.generated.blueprint, null, 2)}
 Données brutes du fichier de référence (blueprint) :
 ${JSON.stringify(summary.reference.blueprint, null, 2)}
 
-Script généré (500 premiers caractères) :
-${gen.scriptContent?.slice(0, 500) || 'N/A'}
+Script généré (complet) :
+${gen.scriptContent || 'N/A'}
 
-Script de référence (500 premiers caractères) :
-${ref.scriptContent?.slice(0, 500) || 'N/A'}
+Script de référence (complet) :
+${ref.scriptContent || 'N/A'}
 
 Peux-tu corriger le code de génération du fichier .hyp ?`
 
