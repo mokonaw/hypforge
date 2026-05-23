@@ -375,50 +375,40 @@ function removeOrphanElseBlocks(src) {
 }
 
 /**
- * Remove ALL stray `else {` blocks — aggressive cleanup.
- * Scans line-by-line: if a line contains only `else {` (with optional leading whitespace)
- * and the previous non-empty line was a closing `}`, remove the else block.
- * Also removes the orphan `}` that precedes it (since it's now a standalone closing brace).
+ * Remove ALL stray `else {` blocks — ultra aggressive cleanup.
+ * Simply removes any `else {` that appears after a `return` statement (with possible blank lines between).
+ * Also removes the closing `}` of the if-block that precedes it.
  */
 function removeStrayElseBlocks(src) {
-  const lines = src.split('\n')
-  const out = []
-  let i = 0
-  while (i < lines.length) {
-    const line = lines[i]
-    const trimmed = line.trim()
-    // Check if this line is `else {` (possibly with leading whitespace)
-    if (/^else\s*\{/.test(trimmed)) {
-      // Look back: was the previous non-empty line a closing `}`?
-      let j = i - 1
-      while (j >= 0 && lines[j].trim() === '') j--
-      if (j >= 0 && /^\}$/.test(lines[j].trim())) {
-        // Found orphan else! Remove the preceding `}` too
-        // Remove the last line from output (the orphan `}`)
-        out.pop()
-        // Skip the else block entirely
-        let depth = 0
-        let k = i
-        let foundOpen = false
-        while (k < lines.length) {
-          const l = lines[k]
-          for (const ch of l) {
-            if (ch === '{') { depth++; foundOpen = true }
-            else if (ch === '}') { depth-- }
-          }
-          if (foundOpen && depth === 0) {
-            i = k + 1
-            break
-          }
-          k++
-        }
-        continue // don't add this else block to output
+  // Pattern: `return` → optional whitespace/newlines → `}` → optional whitespace/newlines → `else {`
+  // We remove from the `}` (closing the if-block) through the entire else block
+  const pattern = /\breturn\s*;?[ \t]*\n(?:[ \t]*\n)*[ \t]*\}[ \t]*\n(?:[ \t]*\n)*[ \t]*else\s*\{/g
+  let result = src
+  let match
+  while ((match = pattern.exec(result)) !== null) {
+    // Find where the `}` is (end of if-block)
+    const ifBlockEnd = match.index + match[0].indexOf('}') + 1
+    // Find where the `else {` starts
+    const elseStart = match.index + match[0].lastIndexOf('else')
+    // Now find the end of the else block by brace counting
+    let depth = 0
+    let i = elseStart
+    let foundOpen = false
+    while (i < result.length) {
+      if (result[i] === '{') { depth++; foundOpen = true }
+      else if (result[i] === '}') { depth-- }
+      if (foundOpen && depth === 0) {
+        let end = i + 1
+        while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
+        // Remove from the closing `}` of if-block to end of else block
+        result = result.slice(0, ifBlockEnd) + result.slice(end)
+        pattern.lastIndex = 0
+        break
       }
+      i++
     }
-    out.push(line)
-    i++
   }
-  return out.join('\n')
+  return result
 }
 
 /**
