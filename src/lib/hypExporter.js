@@ -516,7 +516,7 @@ export async function buildHypFile({
     assets.push({
       type: ext === 'vrm' ? 'avatar' : 'model',
       url,
-      file: modelFile,
+      size: modelBuffer.byteLength, // ✅ Use actual byte length
       buffer: modelBuffer,
     })
   }
@@ -553,12 +553,20 @@ export async function buildHypFile({
       '$1' + insertBlock + '\n'
     )
   }
-  const scriptBlob = new Blob([scriptSource], { type: 'application/javascript' })
-  const scriptFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
-  const scriptBuffer = await scriptFile.arrayBuffer()
-  const scriptHash = await sha256Hex(scriptBuffer)
+
+  // --- CRITICAL: Encode script to bytes FIRST to get accurate size ---
+  const encoder = new TextEncoder()
+  const scriptBytes = encoder.encode(scriptSource)
+  const scriptHash = await sha256Hex(scriptBytes.buffer)
   const scriptUrl = `asset://${scriptHash}.js`
-  assets.push({ type: 'script', url: scriptUrl, file: scriptFile, buffer: scriptBuffer })
+  
+  // Add script asset with CORRECT byte size
+  assets.push({
+    type: 'script',
+    url: scriptUrl,
+    size: scriptBytes.length, // ✅ Use actual byte length, not string.length or file.size
+    buffer: scriptBytes.buffer,
+  })
 
   // --- Props: extract from script configure() + merge with effectParams ---
   const scriptProps = extractPropsFromScript(scriptSource)
@@ -583,25 +591,43 @@ export async function buildHypFile({
     disabled: false,
   }
 
-  // --- Header ---
+  // --- Header: Build JSON with accurate sizes ---
   const header = {
     blueprint,
     assets: assets.map(a => ({
       type: a.type,
       url: a.url,
-      size: a.file.size,
-      mime: a.file.type || mimeFor(extFromName(a.url)),
+      size: a.size, // ✅ Already set correctly above
+      mime: a.type === 'script' ? 'application/javascript' : (a.file?.type || mimeFor(extFromName(a.url))),
     })),
   }
 
-  const headerBytes = new TextEncoder().encode(JSON.stringify(header))
-  const headerSize = new Uint8Array(4)
-  new DataView(headerSize.buffer).setUint32(0, headerBytes.length, true)
+  // Encode header to bytes
+  const headerBytes = encoder.encode(JSON.stringify(header))
+  
+  // Create 4-byte header (uint32 LE)
+  const headerSizeBytes = new Uint8Array(4)
+  new DataView(headerSizeBytes.buffer).setUint32(0, headerBytes.length, true)
 
+  // Collect all asset buffers
   const fileBuffers = assets.map(a => a.buffer)
 
+  // --- Concatenate all bytes into final Uint8Array ---
+  const totalLength = headerSizeBytes.length + headerBytes.length + fileBuffers.reduce((sum, buf) => sum + buf.byteLength, 0)
+  const finalBytes = new Uint8Array(totalLength)
+  
+  let offset = 0
+  finalBytes.set(headerSizeBytes, offset)
+  offset += headerSizeBytes.length
+  finalBytes.set(headerBytes, offset)
+  offset += headerBytes.length
+  for (const buf of fileBuffers) {
+    finalBytes.set(new Uint8Array(buf), offset)
+    offset += buf.byteLength
+  }
+
   const filename = `${slugify(name)}.hyp`
-  return new File([headerSize, headerBytes, ...fileBuffers], filename, {
+  return new File([finalBytes], filename, {
     type: 'application/octet-stream',
   })
 }
