@@ -367,15 +367,15 @@ app.onDispose = () => { try { app.remove(holder) } catch {} }
 - L'appel initial à applyAll() peut être direct : applyAll() (le wrapping try/catch masque les vraies erreurs, éviter sauf si explicitement nécessaire).
 
 - RÈGLES ABSOLUES pour la hiérarchie des nœuds :
-  1. app.create('prim', {...}) ET app.create('webview') DOIVENT TOUJOURS être suivis immédiatement de app.add(varName) AVANT tout holder.add(varName) — c'est obligatoire sinon crash à l'import.
+  1. Un nœud enfant d'un group/holder NE DOIT PAS avoir app.add() — utiliser SEULEMENT holder.add(). app.add() et holder.add() sur le même nœud = double attach = CRASH.
      Exemple CORRECT :
        screenshotView = app.create('prim', { type: 'box', scale: [W, H, 0.02], ... })
-       app.add(screenshotView)      // ← OBLIGATOIRE
-       holder.add(screenshotView)   // ← seulement après app.add()
+       holder.add(screenshotView)   // ← SEULEMENT holder.add(), jamais app.add() sur un enfant de holder
      Exemple INCORRECT (crash) :
        screenshotView = app.create('prim', { ... })
-       holder.add(screenshotView)   // ← sans app.add() préalable = CRASH
-  2. Si tu crées un group (holder), TOUS les enfants vont d'abord dans app.add() puis holder.add()
+       app.add(screenshotView)      // ← NE PAS FAIRE si le nœud va dans holder
+       holder.add(screenshotView)
+  2. app.add() est réservé aux nœuds de premier niveau (holder/group, actions, rigidbody, audio...) — jamais sur leurs enfants
   3. Les prim doivent avoir scale et position dans leur config initiale, pas via .scale.set() après
   4. Ne jamais ajouter de props dans app.configure() pour des fonctionnalités qui ne sont pas implémentées dans le script (ex: proximityDistance sans boucle update)
   5. app.keepActive = true se place TOUJOURS juste après if (!world.isClient) return, avant app.configure()`

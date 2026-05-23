@@ -134,21 +134,12 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/\bapp\.add\(placeholderPane\)/g, 'holder.add(placeholderPane)')
   scriptSource = scriptSource.replace(/\bapp\.remove\(placeholderPane\)/g, 'holder.remove(placeholderPane)')
 
-  // CRITICAL: app.create('prim', ...) MUST be followed by app.add(varName) before any holder.add(varName)
-  // Pattern: find  `varName = app.create('prim', ...)\n  holder.add(varName)`  → inject app.add(varName) between
+  // CRITICAL: nodes that are added to a holder/group must NOT also have app.add()
+  // Remove any app.add(varName) that is immediately followed by holder.add(varName) on the next line
+  // (the app.add is redundant and causes a double-attach crash)
   scriptSource = scriptSource.replace(
-    /(\b(\w+)\s*=\s*app\.create\(\s*'prim'[\s\S]*?\))\s*\n([ \t]*)(holder\.add\(\2\))/g,
-    (match, creation, varName, indent, holderAdd) => {
-      // Only inject if app.add(varName) is not already present right after creation
-      return `${creation}\n${indent}app.add(${varName})\n${indent}${holderAdd}`
-    }
-  )
-  // Also handle webview created inline and directly added to holder without app.add()
-  scriptSource = scriptSource.replace(
-    /(\b(\w+)\s*=\s*app\.create\(\s*'webview'\s*\))\s*\n([ \t]*)(holder\.add\(\2\))/g,
-    (match, creation, varName, indent, holderAdd) => {
-      return `${creation}\n${indent}app.add(${varName})\n${indent}${holderAdd}`
-    }
+    /^([ \t]*)app\.add\((\w+)\)([ \t]*)\n([ \t]*)holder\.add\(\2\)/gm,
+    (match, i1, varName, t1, i2) => `${i2}holder.add(${varName})`
   )
 
   // Remove dead proximity/volume variables — only if NOT used elsewhere
