@@ -386,9 +386,11 @@ function removeStrayElseBlocks(src) {
   let result = src
   let match
   while ((match = pattern.exec(result)) !== null) {
-    // Check if the preceding ~150 chars end with `return\n...}`
-    const beforeBrace = result.slice(Math.max(0, match.index - 150), match.index)
-    if (/\breturn\s*;?[ \t]*\n[ \t]*\}$/.test(beforeBrace)) {
+    // Check if the preceding ~300 chars contain `if (...) {` followed by `return` then `}`
+    // More permissive: just check if there's a `return` anywhere before the `}` in the same block
+    const beforeBrace = result.slice(Math.max(0, match.index - 300), match.index)
+    // Look for pattern: if (...) { ... return ... } then else
+    if (/\bif\s*\([^)]+\)\s*\{[\s\S]{0,200}?\breturn\s*;?[\s\S]{0,50}?\}$/.test(beforeBrace)) {
       // Found orphan else after return block — remove everything from `}` to end of else block
       const bracePos = match.index
       const elseStart = match.index + match[0].indexOf('else')
