@@ -286,9 +286,10 @@ function patchScript(scriptSource) {
   // Remove empty `if (proximityAction) { }` or `if (proximityAction) {\n}` blocks
   scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*proximityAction\s*\)\s*\{[\s\n]*\}[ \t]*\n?/g, '')
   // Remove `try { ... } catch(e) {}` blocks referencing removed vars (proximityAction, triggerAction, leaveTimer)
-  scriptSource = scriptSource.replace(/[ \t]*try\s*\{[^}]*(?:proximityAction|triggerAction|leaveTimer)[^}]*\}\s*catch[^}]*\}[ \t]*\n?/g, '')
-  // Remove orphan `catch {} }` or `catch(e) {} }` left after partial try/catch removal
-  scriptSource = scriptSource.replace(/[ \t]*catch\s*(?:\([^)]*\))?\s*\{[^}]*\}[ \t]*\n/g, '')
+  // Also handles `}catch` with no space (e.g. `try { app.remove(holder) }catch {} }`)
+  scriptSource = scriptSource.replace(/[ \t]*try\s*\{[^}]*(?:proximityAction|triggerAction|leaveTimer)[^}]*\}\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\}[ \t]*\n?/g, '')
+  // Remove orphan `}catch {} }` — when a try/catch was partially removed and left `}catch {}`
+  scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n?/g, '\n')
   // Fix misindented closing brace left after removing content inside an if-block:
   // Pattern: any line ending with `= null` or `= null;` followed by a `}` with MORE indentation
   scriptSource = scriptSource.replace(/([ \t]*\w[^\n]*=\s*null\s*;?[ \t]*\n)([ \t]+\}[ \t]*\n)/g, (m, prev, brace) => {
@@ -303,6 +304,9 @@ function patchScript(scriptSource) {
   // a `return` and the `else` branch becomes unreachable dead code after proximity removal.
   // Use brace-counting to handle multi-line else bodies correctly.
   scriptSource = removeOrphanElseBlocks(scriptSource)
+  // After else removal, a lone `}` may be left on its own line (closing the original if-block
+  // whose else was removed). Remove isolated `}` lines that have no matching open brace context.
+  scriptSource = removeOrphanClosingBraces(scriptSource)
 
   // Fix screenshotView.visible = !isNear → always visible (proximity removed)
   scriptSource = scriptSource.replace(/\bscreenshotView\.visible\s*=\s*!isNear\b/g, 'screenshotView.visible = true')
@@ -332,28 +336,29 @@ function patchScript(scriptSource) {
 }
 
 /**
- * Remove orphan `else { ... }` blocks that follow a `return` statement.
- * Also removes bare `else { ... }` blocks left behind after proximity removal.
- * Uses brace-counting to handle multi-line bodies correctly.
+ * Remove orphan `else { ... }` blocks that are left as dead code after proximity removal.
+ * Only removes `else` blocks that immediately follow a line ending with `return` or `return;`
+ * (possibly with a blank line in between). Leaves all other else blocks intact.
  */
 function removeOrphanElseBlocks(src) {
-  // Match any `else {` (possibly with leading whitespace), brace-count to find end, remove
-  const pattern = /[ \t]*\belse\s*\{/g
+  // Pattern: `return` (end of line) → optional blank lines → `else {`
+  // The `else {` and its body are unreachable dead code → remove
+  const pattern = /(\breturn\s*;?[ \t]*\n(?:[ \t]*\n)*)[ \t]*else\s*\{/g
   let result = src
   let match
   while ((match = pattern.exec(result)) !== null) {
-    const start = match.index
+    // Keep the `return` line, remove from `else {` onward (brace-counted)
+    const elseStart = match.index + match[1].length
     let depth = 0
-    let i = start
+    let i = elseStart
     let foundOpen = false
     while (i < result.length) {
       if (result[i] === '{') { depth++; foundOpen = true }
       else if (result[i] === '}') { depth-- }
       if (foundOpen && depth === 0) {
         let end = i + 1
-        // consume optional trailing newline
         while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
-        result = result.slice(0, start) + result.slice(end)
+        result = result.slice(0, elseStart) + result.slice(end)
         pattern.lastIndex = 0
         break
       }
@@ -361,6 +366,34 @@ function removeOrphanElseBlocks(src) {
     }
   }
   return result
+}
+
+/**
+ * Remove orphan closing `}` lines left after else-block removal.
+ * Scans the script tracking brace depth; any `}` that would bring depth below 0 is removed.
+ */
+function removeOrphanClosingBraces(src) {
+  const lines = src.split('\n')
+  const out = []
+  let depth = 0
+  for (const line of lines) {
+    const trimmed = line.trim()
+    // Count braces on this line
+    let opens = 0, closes = 0
+    for (const ch of trimmed) {
+      if (ch === '{') opens++
+      else if (ch === '}') closes++
+    }
+    // If this line is ONLY a `}` (possibly with semicolon) and would go negative → skip it
+    if (/^\}[;]?$/.test(trimmed) && depth + opens - closes < 0) {
+      // orphan closing brace — drop it
+      continue
+    }
+    depth += opens - closes
+    if (depth < 0) depth = 0
+    out.push(line)
+  }
+  return out.join('\n')
 }
 
 /**
