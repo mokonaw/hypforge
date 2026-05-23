@@ -11,7 +11,9 @@ Hyperfy est un moteur de monde virtuel 3D. Les apps Hyperfy sont des scripts Jav
 
 GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clearTimeout
 
-⚠️ IMPORTANT : setInterval N'EXISTE PAS dans Hyperfy V2. Pour les boucles temporelles, utilise app.on('update', delta => {...}) UNIQUEMENT.
+⚠️ IMPORTANT : setInterval N'EXISTE PAS dans Hyperfy V2.
+⚠️ CRITIQUE : app.on('update', ...) N'EXISTE PAS et CRASHE l'import — NE JAMAIS UTILISER.
+⚠️ CRITIQUE : world.getPlayer() N'EXISTE PAS et CRASHE — NE JAMAIS UTILISER.
 
 --- app ---
   app.position.set(x, y, z) — ou app.position.x = ...
@@ -20,8 +22,6 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   app.add(node) — ajoute un nœud enfant
   app.remove(node) — retire un nœud
   app.get('NomNode') — récupère un nœud enfant par son nom (ex: nœud GLB nommé dans Blender)
-  app.on('update', delta => {...}) — boucle de rendu (delta en secondes) — SEUL moyen de faire des boucles continues
-  app.on('fixedUpdate', delta => {...}) — physique fixe
   app.keepActive = true — empêche l'app de se désactiver quand hors champ (utile pour webview, audio, etc.)
   app.configure([...fields]) — déclare les champs éditables dans l'UI Hyperfy (TOUJOURS en premier dans le script)
   app.onDispose = () => {...} — nettoyage quand l'app est détruite (supprimer DOM, nodes, etc.)
@@ -36,8 +36,6 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   world.isClient — boolean, true si exécuté côté navigateur
   world.isServer — boolean
   world.open(url, newTab) — ouvre une URL (newTab = true pour nouvel onglet)
-  world.getPlayer() — retourne le joueur local (côté client, sans argument)
-  world.getPlayer(playerId) — retourne un joueur par son ID (côté serveur)
   world.add(node) — ajoute un node au monde (niveau world, pas app)
   world.remove(node) — retire un node du monde
   world.attach(vrm) — attache un VRM/node au monde sans modifier sa position
@@ -46,13 +44,6 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   world.on('chat', msg => {...}) — écoute les messages du chat monde (serveur) ; msg = { id, from, fromId, body, createdAt }
   world.chat(msg, broadcast) — envoie un message dans le chat monde (serveur) ; msg = { id, from, fromId, body, createdAt }, broadcast = true pour tous
   world.getTimestamp() — timestamp monde actuel (number)
-
---- player (objet retourné par world.getPlayer) ---
-  player.id — identifiant unique du joueur
-  player.name — nom du joueur
-  player.position — Vector3 (x, y, z)
-  player.rotation.y — rotation Y
-  player.teleport(position, rotationY) — téléporte le joueur (position = Vector3, rotationY = number)
 
 --- app (propriétés supplémentaires) ---
   app.isMoving — boolean, true si le joueur est en train de déplacer l'app (utile dans onPointerDown)
@@ -331,23 +322,9 @@ applyAll()
 if (props && typeof props.onChange === 'function') props.onChange(() => applyAll())
 app.onDispose = () => { try { app.remove(holder) } catch {} }
 
-=== EXEMPLE — rotation continue ===
-app.on('update', delta => {
-  app.rotation.y += 1.0 * delta
-})
-
-=== EXEMPLE — détection proximité joueur (sans setInterval) ===
-let isNear = false
-app.on('update', delta => {
-  const player = world.getPlayer()
-  if (!player) return
-  const dx = player.position.x - app.position.x
-  const dy = player.position.y - app.position.y
-  const dz = player.position.z - app.position.z
-  const dist = Math.sqrt(dx*dx + dy*dy + dz*dz)
-  if (dist < 5 && !isNear) { isNear = true; /* action proche */ }
-  else if (dist >= 5 && isNear) { isNear = false; /* action éloigné */ }
-})
+⛔ NE PAS UTILISER app.on('update') — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
+⛔ NE PAS UTILISER world.getPlayer() — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
+⛔ Si l'utilisateur demande une détection de proximité, réponds que ce n'est pas supporté et propose une alternative sans boucle update (ex: une action cliquable via app.create('action')).
 
 === CE QUI N'EXISTE PAS — NE JAMAIS UTILISER ===
   ❌ setInterval / clearInterval — N'EXISTENT PAS, utiliser app.on('update')

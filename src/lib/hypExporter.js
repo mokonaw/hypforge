@@ -89,15 +89,21 @@ function extractPropsFromScript(scriptSource) {
  * Called before embedding the script in the .hyp file.
  */
 function patchScript(scriptSource) {
-  // Replace app.create('image') — this node type doesn't exist in Hyperfy V2
-  // and causes an immediate crash. Replace with a webview (same API surface).
+  // Replace app.create('image') — doesn't exist in Hyperfy V2, crashes at import
   scriptSource = scriptSource.replace(/app\.create\(\s*['"]image['"]\s*\)/g, "app.create('webview')")
 
   // Remove imgPlane.fit = ... (not a valid webview prop)
   scriptSource = scriptSource.replace(/\bimgPlane\.fit\s*=\s*[^\n]+\n?/g, '')
 
-  // Ensure app.keepActive = true comes right after the isClient guard
-  // (handled separately by ensureIsClientGuard order)
+  // Remove app.on('update', ...) blocks — doesn't exist in Hyperfy V2, crashes at import
+  // Match: app.on('update', ... => { ... }) — handles multiline blocks
+  scriptSource = scriptSource.replace(/app\.on\(\s*['"]update['"]\s*,[\s\S]*?\}\s*\)\s*\n?/g, '// [patched: app.on(update) removed — not supported in Hyperfy V2]\n')
+
+  // Remove app.on('fixedUpdate', ...) blocks for same reason
+  scriptSource = scriptSource.replace(/app\.on\(\s*['"]fixedUpdate['"]\s*,[\s\S]*?\}\s*\)\s*\n?/g, '// [patched: app.on(fixedUpdate) removed — not supported in Hyperfy V2]\n')
+
+  // Replace world.getPlayer() — doesn't exist in Hyperfy V2
+  scriptSource = scriptSource.replace(/world\.getPlayer\(\s*\)/g, 'null /* world.getPlayer() not available */')
 
   return scriptSource
 }
