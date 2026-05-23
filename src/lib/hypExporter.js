@@ -53,6 +53,57 @@ function mimeFor(ext) {
 }
 
 /**
+ * Extract initial prop values from app.configure() calls in a script string.
+ * Returns an object like { key: initialValue } for each configured field.
+ */
+function extractPropsFromScript(scriptSource) {
+  const props = {}
+  // Match individual configure field objects: { ..., key: 'xxx', ..., initial: yyy, ... }
+  const fieldRegex = /\{[^{}]*\}/g
+  const matches = scriptSource.match(fieldRegex) || []
+  for (const block of matches) {
+    const keyMatch = block.match(/\bkey\s*:\s*['"]([^'"]+)['"]/)
+    const initialMatch = block.match(/\binitial\s*:\s*([^,}]+)/)
+    if (!keyMatch) continue
+    const key = keyMatch[1]
+    // Skip section separators
+    if (block.match(/\btype\s*:\s*['"]section['"]/)) continue
+    if (initialMatch) {
+      const raw = initialMatch[1].trim()
+      // Parse the raw value
+      if (raw === 'true') props[key] = true
+      else if (raw === 'false') props[key] = false
+      else if (raw === 'null') props[key] = null
+      else if (/^['"]/.test(raw)) props[key] = raw.slice(1, -1)
+      else if (!isNaN(Number(raw))) props[key] = Number(raw)
+      else props[key] = raw
+    } else {
+      props[key] = null
+    }
+  }
+  return props
+}
+
+/**
+ * Ensure `if (!world.isClient) return` is the very first executable line.
+ */
+function ensureIsClientGuard(scriptSource) {
+  const guard = 'if (!world.isClient) return'
+  // Already correct position: guard is the first non-comment, non-empty line
+  const lines = scriptSource.split('\n')
+  const firstCodeIdx = lines.findIndex(l => {
+    const t = l.trim()
+    return t.length > 0 && !t.startsWith('//')
+  })
+  if (firstCodeIdx !== -1 && lines[firstCodeIdx].trim() === guard) {
+    return scriptSource // already correct
+  }
+  // Remove any existing guard elsewhere
+  const withoutGuard = lines.filter(l => l.trim() !== guard).join('\n')
+  return guard + '\n' + withoutGuard
+}
+
+/**
  * Build a .hyp File from a builder state.
  *
  * @param {Object} opts
@@ -95,18 +146,24 @@ export async function buildHypFile({
   }
 
   // --- Script ---
-  let scriptFile
+  let scriptSource
   if (providedScriptFile) {
-    scriptFile = providedScriptFile
+    scriptSource = await providedScriptFile.text()
   } else {
-    const scriptSource = buildScript(effect, effectParams, { customScript })
-    const scriptBlob = new Blob([scriptSource], { type: 'application/javascript' })
-    scriptFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
+    scriptSource = buildScript(effect, effectParams, { customScript })
   }
+  // Ensure isClient guard is always first
+  scriptSource = ensureIsClientGuard(scriptSource)
+  const scriptBlob = new Blob([scriptSource], { type: 'application/javascript' })
+  const scriptFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
   const scriptBuffer = await scriptFile.arrayBuffer()
   const scriptHash = await sha256Hex(scriptBuffer)
   const scriptUrl = `asset://${scriptHash}.js`
   assets.push({ type: 'script', url: scriptUrl, file: scriptFile, buffer: scriptBuffer })
+
+  // --- Props: extract from script configure() + merge with effectParams ---
+  const scriptProps = extractPropsFromScript(scriptSource)
+  const mergedProps = { ...scriptProps, ...(effectParams || {}) }
 
   // --- Blueprint ---
   const blueprint = {
@@ -119,7 +176,7 @@ export async function buildHypFile({
     desc: description || null,
     model: modelUrl,
     script: scriptUrl,
-    props: { ...(effectParams || {}) },
+    props: mergedProps,
     preload: false,
     public: false,
     locked: false,
