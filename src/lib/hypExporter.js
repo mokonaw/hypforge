@@ -160,15 +160,9 @@ function patchScript(scriptSource) {
   // Remove app.keepActive — will be re-inserted at the correct position by ensureIsClientGuard
   scriptSource = scriptSource.replace(/^[ \t]*app\.keepActive\s*=\s*true[ \t]*\n/m, '')
 
-  // After all patches, if isNear is still referenced but undeclared, inject declaration
-  if (/\bisNear\b/.test(scriptSource) && !/\b(?:let|var|const)\s+isNear\b/.test(scriptSource)) {
-    // inject after the keeper line (first non-empty line after the header)
-    scriptSource = scriptSource.replace(/^(if \(!world\.isClient\) return\napp\.keepActive = true\n)/m,
-      '$1let isNear = false\n')
-  }
-
-  // Same for updateVolume calls — remove any remaining calls
+  // Remove any remaining calls to removed functions
   scriptSource = scriptSource.replace(/^[ \t]*updateVolume\([^)]*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*getProxDist\(\s*\)\s*;?[ \t]*\n/gm, '')
 
   return scriptSource
 }
@@ -296,6 +290,22 @@ export async function buildHypFile({
   // Patch broken patterns then ensure isClient guard is always first
   scriptSource = patchScript(scriptSource)
   scriptSource = ensureIsClientGuard(scriptSource)
+
+  // Final safety pass: inject missing variable declarations AFTER the guard is in place
+  // isNear — used by showNear/showFar/applyAll patterns but sometimes not declared
+  if (/\bisNear\b/.test(scriptSource) && !/\b(?:let|var|const)\s+isNear\b/.test(scriptSource)) {
+    scriptSource = scriptSource.replace(
+      /^(if \(!world\.isClient\) return\napp\.keepActive = true\n\n)/m,
+      '$1let isNear = false\n'
+    )
+  }
+  // getProxDist — sometimes called but definition was removed; stub it out
+  if (/\bgetProxDist\(\)/.test(scriptSource) && !/function\s+getProxDist\s*\(/.test(scriptSource)) {
+    scriptSource = scriptSource.replace(
+      /^(if \(!world\.isClient\) return\napp\.keepActive = true\n\n)/m,
+      '$1function getProxDist() { return Math.max(1, Number(props.proximityDistance ?? 4)) }\n'
+    )
+  }
   const scriptBlob = new Blob([scriptSource], { type: 'application/javascript' })
   const scriptFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
   const scriptBuffer = await scriptFile.arrayBuffer()
