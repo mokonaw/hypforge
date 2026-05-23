@@ -95,11 +95,11 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
 
 --- 'prim' — primitif 3D avec matériau (remplace 'mesh') ---
   Créer: app.create('prim', { type: 'box', scale: [w,h,d], position: [x,y,z], color: '#111111', castShadow: false, receiveShadow: false, metalness: 0, roughness: 1 })
-  .scale.set(w, h, d)
-  .position.set(x, y, z)
-  .color (string hex)
+  ⚠️ TOUJOURS passer scale et position dans l'objet de config initial (tableaux [x,y,z]) — NE JAMAIS appeler .scale.set() ou .position.set() avant que le nœud soit attaché
+  .color (string hex) — modifiable après création
   .visible (boolean)
-  app.add(prim)
+  app.add(prim) ou holder.add(prim) selon la hiérarchie souhaitée
+  ⚠️ HIÉRARCHIE : si tu crées un group (holder), TOUS les nœuds enfants doivent être ajoutés via holder.add(), jamais via app.add() directement
 
 --- 'action' — interaction cliquable ---
   .label (string)
@@ -335,6 +335,10 @@ app.onDispose = () => { try { app.remove(holder) } catch {} }
   ❌ app.traverse()
   ❌ world.open() sans vérifier world.isClient
   ❌ document.createElement() — utiliser 'webview' à la place
+  ❌ .scale.set() ou .position.set() sur un prim avant holder.add() — passer scale/position dans la config initiale
+  ❌ app.add(node) si node appartient à un holder/group — utiliser holder.add(node)
+  ❌ app.get('Block') sans try/catch — et NE JAMAIS ajouter cette ligne si aucun modèle GLB n'est utilisé
+  ❌ Déclarer des variables (isNear, lastDist, proximityDistance) liées à une boucle update qui n'existe pas — code mort incohérent
 
 === RÈGLES DE GÉNÉRATION ===
 - Code JavaScript brut uniquement. Zéro markdown, zéro \`\`\`, zéro explication.
@@ -345,9 +349,7 @@ app.onDispose = () => { try { app.remove(holder) } catch {} }
 - Pour ouvrir des liens : toujours vérifier world.isClient avant world.open().
 - Pour les webviews : NE PAS créer si src est vide.
 - Utiliser app.onDispose pour nettoyer les nodes et effets de bord.
-- TOUJOURS masquer le cube placeholder par défaut en ajoutant ces lignes juste après app.configure() :
-    try { const block = app.get('Block'); if (block) block.active = false } catch(e) {}
-  ⚠️ TOUJOURS entourer app.get('Block') d'un try/catch — crashe si aucun GLB n'est défini dans le blueprint.
+- N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne — inutile et source de confusion.
 
 - TOUJOURS sécuriser l'accès aux props de type 'file' (assets uploadés) avec try/catch :
     function getFileUrl(propVal) {
@@ -359,10 +361,13 @@ app.onDispose = () => { try { app.remove(holder) } catch {} }
       return ''
     }
 
-- TOUJOURS entourer l'appel initial à applyAll() d'un try/catch pour éviter un crash silencieux :
-    try { applyAll() } catch(e) { console.error('[app] init error:', e) }
+- L'appel initial à applyAll() peut être direct : applyAll() (le wrapping try/catch masque les vraies erreurs, éviter sauf si explicitement nécessaire).
 
-- TOUJOURS entourer le corps de applyAll() d'un try/catch si elle manipule des nodes ou des props de type file.`
+- RÈGLES ABSOLUES pour la hiérarchie des nœuds :
+  1. Si tu crées un group (holder), TOUS les enfants vont dans holder.add(), pas dans app.add()
+  2. Les prim doivent avoir scale et position dans leur config initiale, pas via .scale.set() après
+  3. Ne jamais ajouter de props dans app.configure() pour des fonctionnalités qui ne sont pas implémentées dans le script (ex: proximityDistance sans boucle update)
+  4. app.keepActive = true se place TOUJOURS juste après if (!world.isClient) return, avant app.configure()`
 
 export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated, prompt, onPromptChange }) {
   const [loading, setLoading] = useState(false)

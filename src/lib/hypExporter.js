@@ -96,35 +96,72 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/\bimgPlane\.fit\s*=\s*[^\n]+\n?/g, '')
 
   // Remove app.on('update', ...) blocks — doesn't exist in Hyperfy V2, crashes at import
-  // Match: app.on('update', ... => { ... }) — handles multiline blocks
-  scriptSource = scriptSource.replace(/app\.on\(\s*['"]update['"]\s*,[\s\S]*?\}\s*\)\s*\n?/g, '// [patched: app.on(update) removed — not supported in Hyperfy V2]\n')
-
-  // Remove app.on('fixedUpdate', ...) blocks for same reason
-  scriptSource = scriptSource.replace(/app\.on\(\s*['"]fixedUpdate['"]\s*,[\s\S]*?\}\s*\)\s*\n?/g, '// [patched: app.on(fixedUpdate) removed — not supported in Hyperfy V2]\n')
+  // Use a greedy approach that handles nested braces by removing line by line
+  scriptSource = scriptSource.replace(/app\.on\(\s*['"]update['"]\s*,[\s\S]*?\}\s*\)\s*\n?/g, '')
+  scriptSource = scriptSource.replace(/app\.on\(\s*['"]fixedUpdate['"]\s*,[\s\S]*?\}\s*\)\s*\n?/g, '')
 
   // Replace world.getPlayer() — doesn't exist in Hyperfy V2
-  scriptSource = scriptSource.replace(/world\.getPlayer\(\s*\)/g, 'null /* world.getPlayer() not available */')
+  scriptSource = scriptSource.replace(/world\.getPlayer\(\s*\)/g, 'null')
+
+  // Fix prim scale: replace .scale.set(x, y, z) calls on newly created prims
+  // The prim config must include scale as array, not via .scale.set() after creation
+  // We can't easily fix this in regex for arbitrary vars, but we can catch the common pattern
+  // where scale.set is called immediately after create('prim')
+  scriptSource = scriptSource.replace(/(\bapp\.create\('prim',\s*\{)([\s\S]*?)(\})\s*\)\s*\n([\s\t]*)(\w+)\.scale\.set\(([^)]+)\)/g,
+    (match, open, body, close, indent, varName, scaleArgs) => {
+      // Only patch if scale not already in config
+      if (body.includes('scale:')) return match
+      const args = scaleArgs.split(',').map(s => s.trim())
+      const scaleArr = '[' + args.join(', ') + ']'
+      return `${open}${body},\n${indent}  scale: ${scaleArr}${close})`
+    }
+  )
+
+  // Fix prim added to app instead of holder — if a var named placeholderPane/placeholder
+  // is added to app directly, change to holder.add (heuristic for common AI pattern)
+  scriptSource = scriptSource.replace(/\bapp\.add\(placeholderPane\)/g, 'holder.add(placeholderPane)')
+  scriptSource = scriptSource.replace(/\bapp\.remove\(placeholderPane\)/g, 'holder.remove(placeholderPane)')
+
+  // Remove dead proximity variables if update loop was removed
+  scriptSource = scriptSource.replace(/^let\s+isNear\s*=\s*false\s*\n/m, '')
+  scriptSource = scriptSource.replace(/^let\s+lastDist\s*=\s*[^\n]+\n/m, '')
+  scriptSource = scriptSource.replace(/^let\s+volumeAudio\s*=\s*null\s*\n/m, '')
+  scriptSource = scriptSource.replace(/^function\s+updateVolume\s*\([^)]*\)\s*\{[\s\S]*?\n\}\n/m, '')
+  scriptSource = scriptSource.replace(/^function\s+getProximityDist\s*\([^)]*\)\s*\{[^\n]+\}\n/m, '')
+
+  // Remove redundant try/catch around app.get('Block') — no GLB in blueprint without model
+  scriptSource = scriptSource.replace(/\btry\s*\{\s*const block = app\.get\('Block'\)[^\n]*\n?\s*\}\s*catch\(e\)\s*\{\s*\}\s*\n?/g, '')
+
+  // Remove proximityDistance from configure if isNear/proximity logic was removed
+  // (remove the whole section if it only had proximityDistance)
+  scriptSource = scriptSource.replace(/\s*\{\s*type:\s*'section'[^}]*key:\s*'sec_proximity'[^}]*\},?\n?/g, '')
+  scriptSource = scriptSource.replace(/\s*\{\s*type:\s*'number'[^}]*key:\s*'proximityDistance'[^}]*\},?\n?/g, '')
+
+  // Move app.keepActive = true to be right after the isClient guard
+  // Remove it from wherever it currently is
+  const hasKeepActive = scriptSource.includes('app.keepActive = true')
+  if (hasKeepActive) {
+    scriptSource = scriptSource.replace(/\napp\.keepActive\s*=\s*true\s*\n/g, '\n')
+  }
 
   return scriptSource
 }
 
 /**
- * Ensure `if (!world.isClient) return` is the very first executable line.
+ * Ensure `if (!world.isClient) return` is the very first executable line,
+ * immediately followed by `app.keepActive = true`.
  */
 function ensureIsClientGuard(scriptSource) {
   const guard = 'if (!world.isClient) return'
-  // Already correct position: guard is the first non-comment, non-empty line
-  const lines = scriptSource.split('\n')
-  const firstCodeIdx = lines.findIndex(l => {
-    const t = l.trim()
-    return t.length > 0 && !t.startsWith('//')
-  })
-  if (firstCodeIdx !== -1 && lines[firstCodeIdx].trim() === guard) {
-    return scriptSource // already correct
-  }
-  // Remove any existing guard elsewhere
-  const withoutGuard = lines.filter(l => l.trim() !== guard).join('\n')
-  return guard + '\n' + withoutGuard
+  const keepActive = 'app.keepActive = true'
+
+  // Remove any existing occurrences of both lines (we'll re-insert at top)
+  let lines = scriptSource.split('\n').filter(l => l.trim() !== guard && l.trim() !== keepActive)
+
+  // Remove leading blank lines
+  while (lines.length > 0 && lines[0].trim() === '') lines.shift()
+
+  return guard + '\n' + keepActive + '\n\n' + lines.join('\n')
 }
 
 /**
@@ -193,7 +230,7 @@ export async function buildHypFile({
   // --- Blueprint ---
   const blueprint = {
     id: nanoid(10),
-    version: 1,
+    version: 2,
     name: name || 'Untitled',
     image: null,
     author: author || null,
