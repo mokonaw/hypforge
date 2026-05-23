@@ -134,17 +134,26 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/\bapp\.add\(placeholderPane\)/g, 'holder.add(placeholderPane)')
   scriptSource = scriptSource.replace(/\bapp\.remove\(placeholderPane\)/g, 'holder.remove(placeholderPane)')
 
-  // Remove dead proximity/volume variables and functions
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+isNear\s*=\s*false[ \t]*\n/m, '')
+  // Remove dead proximity/volume variables — only if NOT used elsewhere
+  // isNear: only remove declaration if the functions that use it (showNear/showFar) are also gone
+  const usesIsNear = /\bisNear\b/.test(scriptSource.replace(/^[ \t]*let\s+isNear\s*=[^\n]+\n/m, ''))
+  if (!usesIsNear) {
+    scriptSource = scriptSource.replace(/^[ \t]*let\s+isNear\s*=\s*false[ \t]*\n/m, '')
+  }
   scriptSource = scriptSource.replace(/^[ \t]*let\s+lastDist\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+volumeAudio\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+proximityCheckTimeout\s*=\s*[^\n]+\n/m, '')
 
-  // Remove function bodies for known dead functions
+  // Remove function bodies for known dead functions (only if actually unused after patches)
+  // updateVolume: always remove — Hyperfy has no volume API accessible
   scriptSource = removeFunctionDef(scriptSource, 'updateVolume')
   scriptSource = removeFunctionDef(scriptSource, 'getProximityDist')
-  scriptSource = removeFunctionDef(scriptSource, 'getDistanceToApp')
-  scriptSource = removeFunctionDef(scriptSource, 'getLocalPlayer')
+  // getDistanceToApp + getLocalPlayer: remove only if scheduleProximityCheck is also gone
+  const hasSchedule = /function\s+scheduleProximityCheck\s*\(/.test(scriptSource)
+  if (!hasSchedule) {
+    scriptSource = removeFunctionDef(scriptSource, 'getDistanceToApp')
+    scriptSource = removeFunctionDef(scriptSource, 'getLocalPlayer')
+  }
   scriptSource = removeFunctionDef(scriptSource, 'scheduleProximityCheck')
 
   // After removing scheduleProximityCheck, remove any calls to it too
@@ -291,19 +300,25 @@ export async function buildHypFile({
   scriptSource = patchScript(scriptSource)
   scriptSource = ensureIsClientGuard(scriptSource)
 
-  // Final safety pass: inject missing variable declarations AFTER the guard is in place
-  // isNear — used by showNear/showFar/applyAll patterns but sometimes not declared
+  // Final safety pass: inject missing declarations AFTER the guard is in place
+  // Build list of injections needed (in reverse order so insertions don't shift each other)
+  const injections = []
+
+  // isNear used but never declared → inject let isNear = false
   if (/\bisNear\b/.test(scriptSource) && !/\b(?:let|var|const)\s+isNear\b/.test(scriptSource)) {
-    scriptSource = scriptSource.replace(
-      /^(if \(!world\.isClient\) return\napp\.keepActive = true\n\n)/m,
-      '$1let isNear = false\n'
-    )
+    injections.push('let isNear = false')
   }
-  // getProxDist — sometimes called but definition was removed; stub it out
-  if (/\bgetProxDist\(\)/.test(scriptSource) && !/function\s+getProxDist\s*\(/.test(scriptSource)) {
+  // getProxDist called but never defined → inject stub
+  if (/\bgetProxDist\s*\(\)/.test(scriptSource) && !/function\s+getProxDist\s*\(/.test(scriptSource)) {
+    injections.push('function getProxDist() { return Math.max(1, Number(props.proximityDistance ?? 4)) }')
+  }
+
+  if (injections.length > 0) {
+    const insertBlock = injections.join('\n') + '\n'
+    // Insert right after the two-line header (guard + keepActive + blank line)
     scriptSource = scriptSource.replace(
       /^(if \(!world\.isClient\) return\napp\.keepActive = true\n\n)/m,
-      '$1function getProxDist() { return Math.max(1, Number(props.proximityDistance ?? 4)) }\n'
+      '$1' + insertBlock + '\n'
     )
   }
   const scriptBlob = new Blob([scriptSource], { type: 'application/javascript' })
