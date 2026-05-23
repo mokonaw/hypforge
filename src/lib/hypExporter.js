@@ -134,13 +134,24 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/\bapp\.add\(placeholderPane\)/g, 'holder.add(placeholderPane)')
   scriptSource = scriptSource.replace(/\bapp\.remove\(placeholderPane\)/g, 'holder.remove(placeholderPane)')
 
-  // CRITICAL: nodes that are added to a holder/group must NOT also have app.add()
-  // Remove any app.add(varName) that is immediately followed by holder.add(varName) on the next line
-  // (the app.add is redundant and causes a double-attach crash)
+  // CRITICAL: Fix double-attach crashes
+  // 1. Remove duplicate consecutive app.add(X) calls
   scriptSource = scriptSource.replace(
-    /^([ \t]*)app\.add\((\w+)\)([ \t]*)\n([ \t]*)holder\.add\(\2\)/gm,
-    (match, i1, varName, t1, i2) => `${i2}holder.add(${varName})`
+    /^([ \t]*app\.add\((\w+)\)[ \t]*)\n[ \t]*app\.add\(\2\)/gm,
+    '$1'
   )
+  // 2. Remove app.add(X) when X is also added to a holder/group (double parenté = crash)
+  //    Scan all varNames that appear in both app.add(X) and holder.add(X) / group.add(X)
+  //    and strip the app.add() line entirely.
+  const holderAdded = new Set()
+  const holderAddPattern = /\b(?:holder|group)\s*\.add\(\s*(\w+)\s*\)/g
+  let hm
+  while ((hm = holderAddPattern.exec(scriptSource)) !== null) holderAdded.add(hm[1])
+  for (const varName of holderAdded) {
+    // Remove standalone app.add(varName) lines (but NOT app.add(holder) which is correct)
+    const re = new RegExp(`^[ \\t]*app\\.add\\(\\s*${varName}\\s*\\)[ \\t]*\\n`, 'gm')
+    scriptSource = scriptSource.replace(re, '')
+  }
 
   // Remove dead proximity/volume variables — only if NOT used elsewhere
   // isNear: only remove declaration if the functions that use it (showNear/showFar) are also gone
@@ -180,6 +191,18 @@ function patchScript(scriptSource) {
   // Remove any remaining calls to removed functions
   scriptSource = scriptSource.replace(/^[ \t]*updateVolume\([^)]*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*getProxDist\(\s*\)\s*;?[ \t]*\n/gm, '')
+
+  // Remove app.remove(X) inside removeXxx() functions for nodes that were never app.add()'d
+  // (they're in a holder, so only holder.remove() is valid)
+  // Re-run holderAdded detection after all other patches
+  const holderAddedFinal = new Set()
+  const hap2 = /\b(?:holder|group)\s*\.add\(\s*(\w+)\s*\)/g
+  let hm2
+  while ((hm2 = hap2.exec(scriptSource)) !== null) holderAddedFinal.add(hm2[1])
+  for (const varName of holderAddedFinal) {
+    const re = new RegExp(`^[ \\t]*(?:try\\s*\\{\\s*)?app\\.remove\\(\\s*${varName}\\s*\\)(?:\\s*\\}\\s*catch[^}]*\\})?[ \\t]*\\n`, 'gm')
+    scriptSource = scriptSource.replace(re, '')
+  }
 
   return scriptSource
 }
