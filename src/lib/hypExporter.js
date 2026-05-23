@@ -274,21 +274,9 @@ function patchScript(scriptSource) {
     const braceIndent = brace.match(/^([ \t]*)/)[1].length
     return braceIndent > prevIndent ? prev : m
   })
-  // Remove empty if-blocks: `if (expr) {\n    varName = null\n      }` where the `}` is oddly indented
-  // More general: collapse any `if (...) {\n<content>\n}` where the closing `}` has MORE indent than the `if`
-  scriptSource = scriptSource.replace(
-    /^([ \t]*)if\s*\([^)]+\)\s*\{([\s\S]*?)\n([ \t]+)\}/gm,
-    (m, ifIndent, body, closeIndent) => {
-      // If closing `}` is MORE indented than the `if` keyword → it's a misformatted leftover block
-      if (closeIndent.length > ifIndent.length) {
-        // Check if body only contains `varName = null` assignments (dead code after patcher)
-        const bodyLines = body.split('\n').map(l => l.trim()).filter(l => l !== '')
-        const allNull = bodyLines.every(l => /^\w+\s*=\s*null\s*;?$/.test(l))
-        if (allNull) return ''
-      }
-      return m
-    }
-  )
+  // Clean up if-blocks whose only remaining content is `varName = null` assignments
+  // (happens when proximity code was inside the block and got removed, leaving just null assignments + misindented `}`)
+  scriptSource = removeDeadIfBlocks(scriptSource)
   // Fix screenshotView.visible = !isNear → always visible (proximity removed)
   scriptSource = scriptSource.replace(/\bscreenshotView\.visible\s*=\s*!isNear\b/g, 'screenshotView.visible = true')
   // Remove `if (isNear) { ... }` / `if (!isNear) { ... }` multi-line blocks
@@ -314,6 +302,49 @@ function patchScript(scriptSource) {
   }
 
   return scriptSource
+}
+
+/**
+ * Remove if-blocks whose body consists solely of `varName = null` assignments
+ * (dead code left after proximity cleanup). Works by scanning line-by-line.
+ */
+function removeDeadIfBlocks(src) {
+  const lines = src.split('\n')
+  const out = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    const ifMatch = line.match(/^([ \t]*)if\s*\([^)]+\)\s*\{\s*$/)
+    if (ifMatch) {
+      const ifIndent = ifMatch[1].length
+      // Collect body lines until matching `}`
+      const bodyLines = []
+      let j = i + 1
+      let closed = false
+      while (j < lines.length) {
+        const t = lines[j].trim()
+        if (t === '}') {
+          closed = true
+          break
+        }
+        bodyLines.push(lines[j])
+        j++
+      }
+      if (closed) {
+        const nonEmpty = bodyLines.map(l => l.trim()).filter(l => l !== '')
+        const allNull = nonEmpty.length > 0 && nonEmpty.every(l => /^\w+\s*=\s*null\s*;?$/.test(l))
+        if (allNull) {
+          // Replace the entire if-block with just the `varName = null` lines (keep assignments, drop the if wrapper)
+          // Actually: just drop the whole block (the null assignments are redundant after removal)
+          i = j + 1
+          continue
+        }
+      }
+    }
+    out.push(line)
+    i++
+  }
+  return out.join('\n')
 }
 
 /**
