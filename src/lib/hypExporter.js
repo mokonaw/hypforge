@@ -767,6 +767,12 @@ export async function buildHypFile({
 export function getPatchedScript(rawScript) {
   let s = patchScript(rawScript)
   s = ensureIsClientGuard(s)
+  
+  // Debug: log final script structure
+  const lines = s.split('\n')
+  console.log('[getPatchedScript] Total lines:', lines.length)
+  console.log('[getPatchedScript] Last 10 lines:', lines.slice(-10))
+  
   return s
 }
 
