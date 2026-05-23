@@ -1,7 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.25';
-import { encodeBase64 } from 'jsr:@std/encoding/base64';
 
-// --- Helpers (same as lib/hypExporter.js) ---
+// --- Helpers ---
 function nanoid(size = 10) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
   let id = ''
@@ -23,20 +22,6 @@ function slugify(str) {
 function extFromName(url) {
   const m = url.match(/\.([a-zA-Z0-9]+)(?:\?|$)/)
   return m ? m[1].toLowerCase() : ''
-}
-
-function mimeFor(ext) {
-  const map = {
-    glb: 'model/gltf-binary',
-    vrm: 'model/vrm',
-    js: 'application/javascript',
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    gif: 'image/gif',
-    webp: 'image/webp',
-  }
-  return map[ext] || 'application/octet-stream'
 }
 
 async function sha256Hex(buffer) {
@@ -102,24 +87,18 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { name, description, author, modelFileUrl, script, effectParams } = body;
 
-    const encoder = new TextEncoder();
-    const assets = [];
-
     // --- Model ---
     let modelUrl = null;
+    let modelSize = 0;
+    let modelExt = 'glb';
     if (modelFileUrl) {
       const modelRes = await fetch(modelFileUrl);
       const modelArrayBuffer = await modelRes.arrayBuffer();
       const modelBytes = new Uint8Array(modelArrayBuffer);
+      modelExt = extFromName(modelFileUrl) || 'glb';
       const modelHash = await sha256Hex(modelBytes.buffer);
-      const ext = extFromName(modelFileUrl) || 'glb';
-      modelUrl = `asset://${modelHash}.${ext}`;
-      assets.push({
-        type: 'model',
-        url: modelUrl,
-        size: modelBytes.length,
-        buffer: modelBytes.buffer.slice(0, modelBytes.byteLength),
-      });
+      modelUrl = `asset://${modelHash}.${modelExt}`;
+      modelSize = modelBytes.length;
     }
 
     // --- Script ---
@@ -134,16 +113,10 @@ Deno.serve(async (req) => {
       scriptSource = scriptSource.replace(/\n[ \t]*\}[ \t]*$/, '');
     }
 
+    const encoder = new TextEncoder();
     const scriptBytes = encoder.encode(scriptSource);
     const scriptHash = await sha256Hex(scriptBytes.buffer);
     const scriptUrl = `asset://${scriptHash}.js`;
-
-    assets.push({
-      type: 'script',
-      url: scriptUrl,
-      size: scriptBytes.length,
-      buffer: scriptBytes.buffer.slice(0, scriptBytes.byteLength),
-    });
 
     // --- Props ---
     const scriptProps = extractPropsFromScript(scriptSource);
@@ -168,43 +141,30 @@ Deno.serve(async (req) => {
       disabled: false,
     };
 
-    // --- Header ---
-    const header = {
-      blueprint,
-      assets: assets.map(a => ({
-        type: a.type,
-        url: a.url,
-        size: a.size,
-        mime: a.type === 'script' ? 'application/javascript' : mimeFor(extFromName(a.url)),
-      })),
-    };
-
-    const headerBytes = encoder.encode(JSON.stringify(header));
-    const headerSizeBytes = new Uint8Array(4);
-    new DataView(headerSizeBytes.buffer).setUint32(0, headerBytes.length, true);
-
-    const fileBuffers = assets.map(a => a.buffer);
-    const totalLength = headerSizeBytes.length + headerBytes.length + fileBuffers.reduce((sum, buf) => sum + buf.byteLength, 0);
-    const finalBytes = new Uint8Array(totalLength);
-
-    let offset = 0;
-    finalBytes.set(headerSizeBytes, offset);
-    offset += headerSizeBytes.length;
-    finalBytes.set(headerBytes, offset);
-    offset += headerBytes.length;
-    for (const buf of fileBuffers) {
-      finalBytes.set(new Uint8Array(buf), offset);
-      offset += buf.byteLength;
+    // --- Assets ---
+    const assets = [];
+    if (modelUrl) {
+      assets.push({
+        type: 'model',
+        url: modelUrl,
+        size: modelSize,
+        mime: 'application/octet-stream',
+      });
     }
+    assets.push({
+      type: 'script',
+      url: scriptUrl,
+      size: scriptBytes.length,
+      mime: 'application/javascript',
+    });
 
-    // Encode to base64 for transport
-    const base64Data = encodeBase64(finalBytes);
-    const filename = `${slugify(name)}.hyp`;
-
-    return Response.json({ 
-      success: true, 
-      fileBase64: base64Data,
-      filename 
+    // Return data for CLIENT-SIDE .hyp assembly (NO binary!)
+    return Response.json({
+      success: true,
+      blueprint,
+      assets,
+      script: scriptSource,
+      filename: `${slugify(name)}.hyp`,
     });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });

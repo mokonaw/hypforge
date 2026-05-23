@@ -6,7 +6,6 @@ import { Plus, Download, Pencil, Trash2, Loader2, Boxes, Search } from 'lucide-r
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { getEffect } from '@/lib/effects'
-import { buildHypFile, downloadFile } from '@/lib/hypExporter'
 import { getAnonymousId } from '@/lib/anonymousId'
 
 async function fetchModelFile(url, filename) {
@@ -40,19 +39,61 @@ export default function MyApps() {
 
   const exportOne = async (app) => {
     try {
-      const effect = getEffect(app.effect_id)
-      const modelFile = await fetchModelFile(app.model_url, app.model_filename)
-      const file = await buildHypFile({
+      // Call backend to get blueprint + script (client-side assembly)
+      const result = await base44.functions.invoke('exportHypFile', {
         name: app.name,
         description: app.description,
         author: app.author,
-        modelFile,
-        effect,
+        modelFileUrl: app.model_url,
+        script: app.custom_script || '',
         effectParams: app.effect_params || {},
-        customScript: app.custom_script || '',
       })
-      downloadFile(file)
-      toast.success(`${file.name} exporté !`)
+
+      if (!result.data?.success) {
+        throw new Error(result.data?.error || 'Erreur inconnue')
+      }
+
+      const { blueprint, assets, script: patchedScript, filename } = result.data
+
+      // Client-side .hyp assembly
+      const encoder = new TextEncoder()
+      const scriptBytes = encoder.encode(patchedScript)
+      
+      const assetsWithSizes = assets.map(a => ({
+        ...a,
+        size: a.type === 'script' ? scriptBytes.length : a.size,
+      }))
+
+      const header = {
+        blueprint,
+        assets: assetsWithSizes,
+      }
+      const jsonBytes = encoder.encode(JSON.stringify(header))
+
+      const headerSizeBytes = new Uint8Array(4)
+      new DataView(headerSizeBytes.buffer).setUint32(0, jsonBytes.length, true)
+
+      const totalLength = headerSizeBytes.length + jsonBytes.length + scriptBytes.length
+      const finalBytes = new Uint8Array(totalLength)
+      
+      let offset = 0
+      finalBytes.set(headerSizeBytes, offset)
+      offset += headerSizeBytes.length
+      finalBytes.set(jsonBytes, offset)
+      offset += jsonBytes.length
+      finalBytes.set(scriptBytes, offset)
+
+      const blob = new Blob([finalBytes], { type: 'application/octet-stream' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast.success(`${filename} exporté !`)
     } catch (e) {
       console.error(e)
       toast.error('Export impossible.')

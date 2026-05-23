@@ -107,7 +107,7 @@ export default function Builder() {
     setPropsValues(props) // initialize with defaults
   }
 
-  // Build .hyp via backend function (base64 transport for binary integrity)
+  // Build .hyp entirely client-side (avoids binary corruption over network)
   const buildAndExport = async () => {
     if (!canExport) {
       toast.error('Remplis le nom et génère un script avant d\'exporter.')
@@ -122,7 +122,7 @@ export default function Builder() {
         modelFileUrl = modelRes.file_url
       }
 
-      // Call backend function to generate .hyp with base64 encoding
+      // Call backend function to get blueprint + script (NO binary)
       const result = await base44.functions.invoke('exportHypFile', {
         name: meta.name,
         description: meta.description,
@@ -136,18 +136,44 @@ export default function Builder() {
         throw new Error(result.data?.error || 'Erreur inconnue')
       }
 
-      const { fileBase64, filename } = result.data
+      const { blueprint, assets, script: patchedScript, filename } = result.data
 
-      // Decode base64 to Uint8Array (preserves binary integrity)
-      const byteCharacters = atob(fileBase64)
-      const byteNumbers = new Array(byteCharacters.length)
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      // Client-side .hyp assembly (preserves UTF-8 and 4-byte header)
+      const encoder = new TextEncoder()
+      
+      // Encode script
+      const scriptBytes = encoder.encode(patchedScript)
+      
+      // Update asset size
+      const assetsWithSizes = assets.map(a => ({
+        ...a,
+        size: a.type === 'script' ? scriptBytes.length : a.size,
+      }))
+
+      // Build header JSON
+      const header = {
+        blueprint,
+        assets: assetsWithSizes,
       }
-      const byteArray = new Uint8Array(byteNumbers)
+      const jsonBytes = encoder.encode(JSON.stringify(header))
 
-      // Download as binary file
-      const blob = new Blob([byteArray], { type: 'application/octet-stream' })
+      // 4-byte header (uint32 LE)
+      const headerSizeBytes = new Uint8Array(4)
+      new DataView(headerSizeBytes.buffer).setUint32(0, jsonBytes.length, true)
+
+      // Assemble: [4-byte size][JSON][script bytes]
+      const totalLength = headerSizeBytes.length + jsonBytes.length + scriptBytes.length
+      const finalBytes = new Uint8Array(totalLength)
+      
+      let offset = 0
+      finalBytes.set(headerSizeBytes, offset)
+      offset += headerSizeBytes.length
+      finalBytes.set(jsonBytes, offset)
+      offset += jsonBytes.length
+      finalBytes.set(scriptBytes, offset)
+
+      // Download
+      const blob = new Blob([finalBytes], { type: 'application/octet-stream' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -155,7 +181,7 @@ export default function Builder() {
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      URL.revokeObjectURL(url)
 
       toast.success(`${filename} exporté !`)
     } catch (e) {

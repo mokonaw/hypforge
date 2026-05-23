@@ -486,108 +486,44 @@ function ensureIsClientGuard(scriptSource) {
 }
 
 /**
- * Build a .hyp File from a builder state.
+ * Build .hyp file data for client-side compilation.
+ * Returns the blueprint and script (no binary assembly - done client-side).
  *
  * @param {Object} opts
  * @param {string} opts.name
  * @param {string} [opts.description]
  * @param {string} [opts.author]
- * @param {File}   [opts.modelFile]  Optional .glb / .vrm
- * @param {File}   [opts.scriptFile] Pre-built script File (takes priority over effect)
- * @param {Object} [opts.effect]     One of EFFECTS (used if no scriptFile)
+ * @param {string} opts.script - The patched JavaScript code
  * @param {Object} [opts.effectParams] Params for the effect
- * @param {string} [opts.customScript] Used when effect.id === 'custom'
- * @returns {Promise<File>} the .hyp file, ready to download
+ * @returns {Object} { blueprint, script } - Ready for client-side .hyp assembly
  */
-export async function buildHypFile({
+export function prepareHypData({
   name,
   description,
   author,
-  modelFile,
-  scriptFile: providedScriptFile,
-  effect,
+  script,
   effectParams,
-  customScript,
 }) {
-  const assets = []
-
-  // --- Model ---
-  let modelUrl = null
-  if (modelFile) {
-    const ext = extFromName(modelFile.name, 'glb')
-    const modelBuffer = await modelFile.arrayBuffer()
-    const modelHash = await sha256Hex(modelBuffer)
-    const url = `asset://${modelHash}.${ext}`
-    modelUrl = url
-    assets.push({
-      type: ext === 'vrm' ? 'avatar' : 'model',
-      url,
-      size: modelBuffer.byteLength, // ✅ Use actual byte length
-      buffer: modelBuffer,
-    })
-  }
-
-  // --- Script ---
-  let scriptSource
-  if (providedScriptFile) {
-    scriptSource = await providedScriptFile.text()
-  } else {
-    scriptSource = buildScript(effect, effectParams, { customScript })
-  }
-  // Patch broken patterns then ensure isClient guard is always first
-  scriptSource = patchScript(scriptSource)
-  scriptSource = ensureIsClientGuard(scriptSource)
-
-  // Final safety pass: inject missing declarations AFTER the guard is in place
-  // Build list of injections needed (in reverse order so insertions don't shift each other)
-  const injections = []
-
-  // isNear used but never declared → inject let isNear = false
-  if (/\bisNear\b/.test(scriptSource) && !/\b(?:let|var|const)\s+isNear\b/.test(scriptSource)) {
-    injections.push('let isNear = false')
-  }
-  // getProxDist called but never defined → inject stub
-  if (/\bgetProxDist\s*\(\)/.test(scriptSource) && !/function\s+getProxDist\s*\(/.test(scriptSource)) {
-    injections.push('function getProxDist() { return Math.max(1, Number(props.proximityDistance ?? 4)) }')
-  }
-
-  if (injections.length > 0) {
-    const insertBlock = injections.join('\n') + '\n'
-    // Insert right after the two-line header (guard + keepActive + blank line)
-    scriptSource = scriptSource.replace(
-      /^(if \(!world\.isClient\) return\napp\.keepActive = true\n\n)/m,
-      '$1' + insertBlock + '\n'
-    )
-  }
-
-  // === CRITICAL FIXES ===
-  // 1. Trim whitespace
-  scriptSource = scriptSource.trim()
+  // Patch and clean the script
+  script = patchScript(script)
+  script = ensureIsClientGuard(script)
+  script = script.trim()
   
-  // 2. Remove ALL trailing orphan closing braces (corruption pattern)
-  // Loop to remove multiple } lines at the end
+  // Remove trailing orphan closing braces
   let prevLength = 0
-  while (prevLength !== scriptSource.length && /\n[ \t]*\}[ \t]*$/.test(scriptSource)) {
-    prevLength = scriptSource.length
-    scriptSource = scriptSource.replace(/\n[ \t]*\}[ \t]*$/, '')
+  while (prevLength !== script.length && /\n[ \t]*\}[ \t]*$/.test(script)) {
+    prevLength = script.length
+    script = script.replace(/\n[ \t]*\}[ \t]*$/, '')
   }
-  
-  // 3. Encode to bytes IMMEDIATELY after cleanup
+
+  // Generate script hash and URL
   const encoder = new TextEncoder()
-  const scriptBytes = encoder.encode(scriptSource)
-  const scriptHash = await sha256Hex(scriptBytes.buffer)
+  const scriptBytes = encoder.encode(script)
+  const scriptHash = sha256HexSync(scriptBytes.buffer)
   const scriptUrl = `asset://${scriptHash}.js`
-  
-  // Add script asset with CORRECT byte size
-  assets.push({
-    type: 'script',
-    url: scriptUrl,
-    size: scriptBytes.length, // ✅ Use actual byte length
-    buffer: scriptBytes.buffer.slice(0, scriptBytes.byteLength), // ✅ Clean buffer slice
-  })
 
   // --- Props: extract from script configure() + merge with effectParams ---
-  const scriptProps = extractPropsFromScript(scriptSource)
+  const scriptProps = extractPropsFromScript(script)
   const mergedProps = { ...scriptProps, ...(effectParams || {}) }
 
   // --- Blueprint ---
@@ -599,7 +535,7 @@ export async function buildHypFile({
     author: author || null,
     url: null,
     desc: description || null,
-    model: modelUrl,
+    model: null,
     script: scriptUrl,
     props: mergedProps,
     preload: false,
@@ -609,45 +545,74 @@ export async function buildHypFile({
     disabled: false,
   }
 
-  // --- Header: Build JSON with accurate sizes ---
+  // --- Assets ---
+  const assets = [{
+    type: 'script',
+    url: scriptUrl,
+    size: scriptBytes.length,
+    mime: 'application/javascript',
+  }]
+
+  return {
+    blueprint,
+    assets,
+    script, // Return the cleaned script for client-side assembly
+  }
+}
+
+/**
+ * Assemble and download a .hyp file entirely client-side.
+ * This avoids any binary corruption from network transfer.
+ *
+ * @param {Object} blueprint - The blueprint object
+ * @param {Array} assets - Array of asset metadata
+ * @param {string} script - The JavaScript code string
+ * @param {string} filename - Output filename
+ */
+export function downloadHypFile(blueprint, assets, script, filename = 'app.hyp') {
+  const encoder = new TextEncoder()
+  
+  // Encode script (already cleaned)
+  const scriptBytes = encoder.encode(script)
+  
+  // Update asset size to match actual encoded bytes
+  const assetsWithSizes = assets.map(a => ({
+    ...a,
+    size: a.type === 'script' ? scriptBytes.length : a.size,
+  }))
+
+  // Build header JSON
   const header = {
     blueprint,
-    assets: assets.map(a => ({
-      type: a.type,
-      url: a.url,
-      size: a.size, // ✅ Already set correctly above
-      mime: a.type === 'script' ? 'application/javascript' : (a.file?.type || mimeFor(extFromName(a.url))),
-    })),
+    assets: assetsWithSizes,
   }
+  const jsonBytes = encoder.encode(JSON.stringify(header))
 
-  // Encode header to bytes
-  const headerBytes = encoder.encode(JSON.stringify(header))
-  
   // Create 4-byte header (uint32 LE)
   const headerSizeBytes = new Uint8Array(4)
-  new DataView(headerSizeBytes.buffer).setUint32(0, headerBytes.length, true)
+  new DataView(headerSizeBytes.buffer).setUint32(0, jsonBytes.length, true)
 
-  // Collect all asset buffers
-  const fileBuffers = assets.map(a => a.buffer)
-
-  // --- Concatenate all bytes into final Uint8Array ---
-  const totalLength = headerSizeBytes.length + headerBytes.length + fileBuffers.reduce((sum, buf) => sum + buf.byteLength, 0)
+  // Assemble final binary: [4-byte header size][JSON header][script bytes]
+  const totalLength = headerSizeBytes.length + jsonBytes.length + scriptBytes.length
   const finalBytes = new Uint8Array(totalLength)
   
   let offset = 0
   finalBytes.set(headerSizeBytes, offset)
   offset += headerSizeBytes.length
-  finalBytes.set(headerBytes, offset)
-  offset += headerBytes.length
-  for (const buf of fileBuffers) {
-    finalBytes.set(new Uint8Array(buf), offset)
-    offset += buf.byteLength
-  }
+  finalBytes.set(jsonBytes, offset)
+  offset += jsonBytes.length
+  finalBytes.set(scriptBytes, offset)
 
-  const filename = `${slugify(name)}.hyp`
-  return new File([finalBytes], filename, {
-    type: 'application/octet-stream',
-  })
+  // Trigger download
+  const blob = new Blob([finalBytes], { type: 'application/octet-stream' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 /**
@@ -677,4 +642,14 @@ export function downloadFile(file) {
   a.click()
   document.body.removeChild(a)
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/**
+ * Synchronous SHA256 hash for client-side use.
+ * Returns hex string.
+ */
+export async function sha256HexSync(buffer) {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }
