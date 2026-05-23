@@ -107,7 +107,7 @@ export default function Builder() {
     setPropsValues(props) // initialize with defaults
   }
 
-  // Build a fake "effect" object to reuse buildHypFile with custom script
+  // Build .hyp via backend function (base64 transport for binary integrity)
   const buildAndExport = async () => {
     if (!canExport) {
       toast.error('Remplis le nom et génère un script avant d\'exporter.')
@@ -115,19 +115,49 @@ export default function Builder() {
     }
     setBusy(true)
     try {
-      // Merge props values into script (simple string replacement)
-      const scriptBlob = new Blob([script], { type: 'application/javascript' })
-      const scriptAsFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
+      // Upload model first if exists
+      let modelFileUrl = null
+      if (modelFile) {
+        const modelRes = await base44.integrations.Core.UploadFile({ file: modelFile })
+        modelFileUrl = modelRes.file_url
+      }
 
-      const file = await buildHypFile({
+      // Call backend function to generate .hyp with base64 encoding
+      const result = await base44.functions.invoke('exportHypFile', {
         name: meta.name,
         description: meta.description,
         author: meta.author,
-        modelFile,
-        scriptFile: scriptAsFile,
+        modelFileUrl,
+        script,
+        effectParams: propsSchema,
       })
-      downloadFile(file)
-      toast.success(`${file.name} exporté !`)
+
+      if (!result.data?.success) {
+        throw new Error(result.data?.error || 'Erreur inconnue')
+      }
+
+      const { fileBase64, filename } = result.data
+
+      // Decode base64 to Uint8Array (preserves binary integrity)
+      const byteCharacters = atob(fileBase64)
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+
+      // Download as binary file
+      const blob = new Blob([byteArray], { type: 'application/octet-stream' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      toast.success(`${filename} exporté !`)
     } catch (e) {
       console.error(e)
       toast.error('Export impossible : ' + (e?.message || 'erreur inconnue'))
