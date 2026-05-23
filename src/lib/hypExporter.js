@@ -303,9 +303,13 @@ function patchScript(scriptSource) {
   // a `return` and the `else` branch becomes unreachable dead code after proximity removal.
   // Use brace-counting to handle multi-line else bodies correctly.
   scriptSource = removeOrphanElseBlocks(scriptSource)
+  scriptSource = removeStrayElseBlocks(scriptSource)
   // Remove orphan `}catch {} }` — when a try/catch was partially removed and left `}catch {}`
-  // Also handles double `catch {}` (e.g. `} catch {} catch {} }`)
+  // Also handles double `catch {}` on same line OR on separate lines (e.g. `} catch {}\ncatch {} }`)
   // Must run BEFORE removeOrphanClosingBraces so the stray `}` it leaves behind is caught
+  // First: handle multi-line double catch (catch {} on its own line)
+  scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n?/g, '\n')
+  // Then: handle single-line double catch
   scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}(?:\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\})*\s*\n?/g, '\n')
   // After else/catch removal, lone `}` lines may remain. Remove any that would bring brace depth negative.
   scriptSource = removeOrphanClosingBraces(scriptSource)
@@ -365,6 +369,41 @@ function removeOrphanElseBlocks(src) {
         break
       }
       i++
+    }
+  }
+  return result
+}
+
+/**
+ * Remove stray `else {` blocks that follow a closing brace after a return.
+ * Handles cases where the `}` is on its own line with indentation before `else`.
+ */
+function removeStrayElseBlocks(src) {
+  // Pattern: `}\n   else {` where the `}` closes a block that ended with `return`
+  // We look for: `}\n` followed by whitespace then `else {`
+  const pattern = /\}\n([ \t]*)else\s*\{/g
+  let result = src
+  let match
+  while ((match = pattern.exec(result)) !== null) {
+    // Check if the preceding block ended with `return`
+    const beforeBrace = result.slice(Math.max(0, match.index - 200), match.index)
+    if (/\breturn\s*;?[ \t]*\n[ \t]*\}$/.test(beforeBrace)) {
+      const elseStart = match.index + match[0].indexOf('else')
+      let depth = 0
+      let i = elseStart
+      let foundOpen = false
+      while (i < result.length) {
+        if (result[i] === '{') { depth++; foundOpen = true }
+        else if (result[i] === '}') { depth-- }
+        if (foundOpen && depth === 0) {
+          let end = i + 1
+          while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
+          result = result.slice(0, match.index + match[0].indexOf('else') - 1) + result.slice(end)
+          pattern.lastIndex = 0
+          break
+        }
+        i++
+      }
     }
   }
   return result
