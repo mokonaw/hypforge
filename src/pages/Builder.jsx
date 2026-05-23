@@ -159,15 +159,18 @@ export default function Builder() {
         effect_params: propsSchema,
         custom_script: script,
         ai_prompt: aiPrompt,
-        anonymous_id: getAnonymousId(),
       }
+      const res = await base44.functions.invoke('saveApp', {
+        app_id: loadId || null,
+        payload,
+        anonymous_id: getAnonymousId(),
+      })
+      const saved = res.data?.app
       if (loadId) {
-        await base44.entities.HypApp.update(loadId, payload)
         toast.success('App mise à jour.')
       } else {
-        const created = await base44.entities.HypApp.create(payload)
         toast.success('App sauvegardée.')
-        navigate(`/builder?id=${created.id}`, { replace: true })
+        navigate(`/builder?id=${saved.id}`, { replace: true })
       }
     } catch (e) {
       console.error(e)
