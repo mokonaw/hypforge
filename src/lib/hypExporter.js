@@ -286,10 +286,9 @@ function patchScript(scriptSource) {
   // Remove empty `if (proximityAction) { }` or `if (proximityAction) {\n}` blocks
   scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*proximityAction\s*\)\s*\{[\s\n]*\}[ \t]*\n?/g, '')
   // Remove `try { ... } catch(e) {}` blocks referencing removed vars (proximityAction, triggerAction, leaveTimer)
-  // Also handles `}catch` with no space (e.g. `try { app.remove(holder) }catch {} }`)
   scriptSource = scriptSource.replace(/[ \t]*try\s*\{[^}]*(?:proximityAction|triggerAction|leaveTimer)[^}]*\}\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\}[ \t]*\n?/g, '')
-  // Remove orphan `}catch {} }` — when a try/catch was partially removed and left `}catch {}`
-  scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n?/g, '\n')
+  // Remove dead proximity comment blocks (multi-line comments left after proximity removal)
+  scriptSource = scriptSource.replace(/^[ \t]*\/\/\s*---\s*Gestion proximit[^\n]*\n(?:[ \t]*\/\/[^\n]*\n)*/gm, '')
   // Fix misindented closing brace left after removing content inside an if-block:
   // Pattern: any line ending with `= null` or `= null;` followed by a `}` with MORE indentation
   scriptSource = scriptSource.replace(/([ \t]*\w[^\n]*=\s*null\s*;?[ \t]*\n)([ \t]+\}[ \t]*\n)/g, (m, prev, brace) => {
@@ -304,8 +303,10 @@ function patchScript(scriptSource) {
   // a `return` and the `else` branch becomes unreachable dead code after proximity removal.
   // Use brace-counting to handle multi-line else bodies correctly.
   scriptSource = removeOrphanElseBlocks(scriptSource)
-  // After else removal, a lone `}` may be left on its own line (closing the original if-block
-  // whose else was removed). Remove isolated `}` lines that have no matching open brace context.
+  // Remove orphan `}catch {} }` — when a try/catch was partially removed and left `}catch {}`
+  // Must run BEFORE removeOrphanClosingBraces so the stray `}` it leaves behind is caught
+  scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n?/g, '\n')
+  // After else/catch removal, lone `}` lines may remain. Remove any that would bring brace depth negative.
   scriptSource = removeOrphanClosingBraces(scriptSource)
 
   // Fix screenshotView.visible = !isNear → always visible (proximity removed)
