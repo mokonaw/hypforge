@@ -85,6 +85,24 @@ function extractPropsFromScript(scriptSource) {
 }
 
 /**
+ * Patch known broken patterns that crash Hyperfy at import time.
+ * Called before embedding the script in the .hyp file.
+ */
+function patchScript(scriptSource) {
+  // Replace app.create('image') — this node type doesn't exist in Hyperfy V2
+  // and causes an immediate crash. Replace with a webview (same API surface).
+  scriptSource = scriptSource.replace(/app\.create\(\s*['"]image['"]\s*\)/g, "app.create('webview')")
+
+  // Remove imgPlane.fit = ... (not a valid webview prop)
+  scriptSource = scriptSource.replace(/\bimgPlane\.fit\s*=\s*[^\n]+\n?/g, '')
+
+  // Ensure app.keepActive = true comes right after the isClient guard
+  // (handled separately by ensureIsClientGuard order)
+
+  return scriptSource
+}
+
+/**
  * Ensure `if (!world.isClient) return` is the very first executable line.
  */
 function ensureIsClientGuard(scriptSource) {
@@ -152,7 +170,8 @@ export async function buildHypFile({
   } else {
     scriptSource = buildScript(effect, effectParams, { customScript })
   }
-  // Ensure isClient guard is always first
+  // Patch broken patterns then ensure isClient guard is always first
+  scriptSource = patchScript(scriptSource)
   scriptSource = ensureIsClientGuard(scriptSource)
   const scriptBlob = new Blob([scriptSource], { type: 'application/javascript' })
   const scriptFile = new File([scriptBlob], 'index.js', { type: 'application/javascript' })
