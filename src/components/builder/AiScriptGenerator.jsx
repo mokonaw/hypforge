@@ -369,8 +369,23 @@ app.on('update', delta => {
 - Pour les webviews : NE PAS créer si src est vide.
 - Utiliser app.onDispose pour nettoyer les nodes et effets de bord.
 - TOUJOURS masquer le cube placeholder par défaut en ajoutant ces lignes juste après app.configure() :
-    const block = app.get('Block')
-    app.remove(block)   ← variante directe, ou : if (block) block.active = false`
+    try { const block = app.get('Block'); if (block) block.active = false } catch(e) {}
+  ⚠️ TOUJOURS entourer app.get('Block') d'un try/catch — crashe si aucun GLB n'est défini dans le blueprint.
+
+- TOUJOURS sécuriser l'accès aux props de type 'file' (assets uploadés) avec try/catch :
+    function getFileUrl(propVal) {
+      try {
+        if (!propVal) return ''
+        if (typeof propVal === 'string') return propVal.trim()
+        if (propVal && propVal.url) return String(propVal.url).trim()
+      } catch(e) {}
+      return ''
+    }
+
+- TOUJOURS entourer l'appel initial à applyAll() d'un try/catch pour éviter un crash silencieux :
+    try { applyAll() } catch(e) { console.error('[app] init error:', e) }
+
+- TOUJOURS entourer le corps de applyAll() d'un try/catch si elle manipule des nodes ou des props de type file.`
 
 export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated, prompt, onPromptChange }) {
   const [loading, setLoading] = useState(false)
