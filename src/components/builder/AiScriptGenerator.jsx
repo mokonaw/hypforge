@@ -138,12 +138,6 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   Créer: app.create('uiimage', { src: 'https://...', width: 240, height: 148, objectFit: 'contain', borderRadius: 8 })
   Pour les assets uploadés: src = props.imageFile.url.replace('asset://', '/assets/')
 
---- 'image' — image 3D plane dans le monde ---
-  .src (string URL)
-  .width / .height (number, mètres)
-  .fit ('none'|'cover'|'contain')
-  app.add(image)
-
 --- 'video' — écran vidéo 3D (MP4 direct uniquement) ---
   .src (string, URL MP4 directe — PAS YouTube embed)
   .width / .height / .aspect / .loop / .volume
@@ -358,6 +352,7 @@ app.on('update', delta => {
 === CE QUI N'EXISTE PAS — NE JAMAIS UTILISER ===
   ❌ setInterval / clearInterval — N'EXISTENT PAS, utiliser app.on('update')
   ❌ app.create('iframe') — utiliser 'webview'
+  ❌ app.create('image') — N'EXISTE PAS dans Hyperfy V2, provoque un crash à l'import ; utiliser 'webview' pour afficher une URL image, ou un 'prim' { type: 'box' } comme placeholder visuel
   ❌ app.create('text') — utiliser 'uitext' dans un 'ui'
   ❌ app.create('plane') — utiliser prim { type: 'box' } ou mesh
   ❌ app.traverse()
@@ -465,7 +460,7 @@ Ex : Une app qui affiche un site web ou une vidéo YouTube dans le monde. Il fau
       <div className="rounded-lg border border-border/60 bg-secondary/20 p-3 flex gap-2.5 text-xs text-muted-foreground">
         <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary/70" />
         <div className="leading-relaxed space-y-1">
-          <p><strong className="text-foreground">Nodes 3D :</strong> action, video, image, audio, mesh, collider, rigidbody, group, anchor, particles</p>
+          <p><strong className="text-foreground">Nodes 3D :</strong> action, video, audio, mesh, collider, rigidbody, group, anchor, particles</p>
           <p><strong className="text-foreground">Nodes UI monde :</strong> ui, uiview, uitext, uiimage — pour afficher du texte et des images en overlay dans la scène</p>
           <p><strong className="text-foreground">Liens externes :</strong> <code className="text-foreground">world.open(url, true)</code> pour ouvrir dans un nouvel onglet. Les vidéos nécessitent une URL MP4 directe (pas YouTube).</p>
         </div>
