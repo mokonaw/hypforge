@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Download, Save, Loader2, FileCode2, Sparkles, Settings, Wand2, ChevronDown, ChevronUp, Eye } from 'lucide-react'
+import { Download, Save, Loader2, FileCode2, Sparkles, Settings, Wand2, ChevronDown, ChevronUp, Eye, FileJson } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { base44 } from '@/api/base44Client'
@@ -70,6 +70,26 @@ export default function Builder() {
   }, [loadId])
 
   const canExport = meta.name.trim().length > 0 && script.trim().length > 0 && script !== EMPTY_SCRIPT
+
+  const exportJson = () => {
+    const data = {
+      name: meta.name,
+      description: meta.description,
+      author: meta.author,
+      ai_prompt: aiPrompt,
+      props: propsSchema,
+      script,
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${meta.name || 'app'}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
 
   // When IA generates a script
   const handleScriptGenerated = (newScript) => {
@@ -168,6 +188,10 @@ export default function Builder() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={exportJson} disabled={!canExport}>
+            <FileJson className="w-4 h-4 mr-2" />
+            Exporter .json
+          </Button>
           <Button variant="outline" onClick={() => setShowVisualizer(true)} disabled={script === EMPTY_SCRIPT}>
             <Eye className="w-4 h-4 mr-2" />
             Aperçu
