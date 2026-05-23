@@ -206,17 +206,25 @@ function patchScript(scriptSource) {
   // setupActions uses proxDist which is removed → remove it too
   scriptSource = removeFunctionDef(scriptSource, 'setupActions')
   scriptSource = removeFunctionDef(scriptSource, 'removeActions')
+  scriptSource = removeFunctionDef(scriptSource, 'startProximityLoop')
+  scriptSource = removeFunctionDef(scriptSource, 'scheduleLeaveCheck')
+  scriptSource = removeFunctionDef(scriptSource, 'restoreAction')
 
   // After removing proximity/action functions, remove all their call sites and dead vars
   scriptSource = scriptSource.replace(/^[ \t]*scheduleProximityCheck\([^)]*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*doProximityCheck\([^)]*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*setupProximityLoop\([^)]*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*startProximityLoop\([^)]*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*scheduleLeaveCheck\([^)]*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*restoreAction\([^)]*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*setupActions\(\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*removeActions\(\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+actionNear\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+actionFar\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+proximityTimer\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+lastPlayerPos\s*=\s*[^\n]+\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+triggerAction\s*=\s*[^\n]+\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+leaveTimer\s*=\s*[^\n]+\n/gm, '')
   // Remove clearTimeout(proximityTimer) calls and related onDispose references to proximityTimer
   scriptSource = scriptSource.replace(/^[ \t]*(?:if\s*\([^)]*proximityTimer[^)]*\)\s*\{[^}]*\}|clearTimeout\s*\(\s*proximityTimer\s*\)\s*;?\s*proximityTimer\s*=\s*null\s*;?)[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*proximityTimer\s*=\s*null\s*;?[ \t]*\n/gm, '')
@@ -248,9 +256,21 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/^[ \t]*getProxDist\(\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*setupVolumeCheck\(\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*checkVolume\(\s*\)\s*;?[ \t]*\n/gm, '')
-  // Remove any clearTimeout(proximityTimer) that may remain anywhere in the script
+  // Remove any clearTimeout(proximityTimer/leaveTimer) that may remain anywhere in the script
   scriptSource = scriptSource.replace(/^[ \t]*clearTimeout\s*\(\s*proximityTimer\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*proximityTimer\s*=\s*null\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*clearTimeout\s*\(\s*leaveTimer\s*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*leaveTimer\s*=\s*null\s*;?[ \t]*\n/gm, '')
+  // Remove if (leaveTimer) { clearTimeout... } blocks
+  scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*leaveTimer\s*\)\s*\{[^}]*\}[ \t]*\n?/g, '')
+  // Remove triggerAction cleanup lines
+  scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+triggerAction[^\n]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*triggerAction\s*=[^\n]+\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*app\.add\s*\(\s*triggerAction\s*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*app\.remove\s*\(\s*triggerAction\s*\)\s*;?[ \t]*\n/gm, '')
+  scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*triggerAction\s*\)\s*\{[^}]*\}[ \t]*\n?/g, '')
+  // Remove standalone `isNear = false` or `isNear = true` assignments (undeclared var)
+  scriptSource = scriptSource.replace(/^[ \t]*isNear\s*=\s*(false|true)\s*;?[ \t]*\n/gm, '')
   // Remove orphan proximityAction variable declaration (let or const, top-level or inside function)
   scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+proximityAction\s*=\s*[^\n]+\n/gm, '')
   // Remove app.remove(proximityAction) anywhere
@@ -277,6 +297,15 @@ function patchScript(scriptSource) {
   // Clean up if-blocks whose only remaining content is `varName = null` assignments
   // (happens when proximity code was inside the block and got removed, leaving just null assignments + misindented `}`)
   scriptSource = removeDeadIfBlocks(scriptSource)
+  // Remove orphan `} else { ... }` or `else { ... }` blocks after a `return` statement
+  // These appear when the AI generates `return\n} else {` patterns
+  scriptSource = scriptSource.replace(/(\breturn\s*;?[ \t]*\n)([ \t]*\}\s*\n)?([ \t]*)else\s*\{([^}]*)\}/g, (m, ret, closeBrace, indent, body) => {
+    // Keep only the return, drop the else block entirely
+    return ret + (closeBrace || '')
+  })
+  // Also handle bare `else {` that immediately follows a line ending the prior if-block
+  scriptSource = scriptSource.replace(/^[ \t]*else\s*\{([^}]*)\}[ \t]*\n/gm, '')
+
   // Fix screenshotView.visible = !isNear → always visible (proximity removed)
   scriptSource = scriptSource.replace(/\bscreenshotView\.visible\s*=\s*!isNear\b/g, 'screenshotView.visible = true')
   // Remove `if (isNear) { ... }` / `if (!isNear) { ... }` multi-line blocks
