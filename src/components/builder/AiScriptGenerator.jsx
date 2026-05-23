@@ -283,62 +283,64 @@ function buildEmbedUrl(rawUrl, autoplay) {
 }
 
 === EXEMPLE — webview YouTube/Twitch ===
-app.configure([
-  { type: 'text', key: 'src', label: 'URL YouTube/Twitch/Web', initial: '' },
-  { type: 'number', key: 'width', label: 'Largeur (m)', initial: 3 },
-  { type: 'number', key: 'factor', label: 'Résolution', initial: 150 },
-])
+if (world.isClient) {
+  app.configure([
+    { type: 'text', key: 'src', label: 'URL YouTube/Twitch/Web', initial: '' },
+    { type: 'number', key: 'width', label: 'Largeur (m)', initial: 3 },
+    { type: 'number', key: 'factor', label: 'Résolution', initial: 150 },
+  ])
 
-const holder = app.create('group')
-app.add(holder)
-let webview = null
-let placeholder = null
+  const holder = app.create('group')
+  app.add(holder)
+  let webview = null
+  let placeholder = null
 
-function buildEmbedUrl(rawUrl) {
-  const url = String(rawUrl || '').trim()
-  if (!url) return ''
-  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)
-  if (ytMatch) return 'https://www.youtube.com/embed/' + ytMatch[1] + '?autoplay=1&muted=1&rel=0'
-  const twitchChannel = url.match(/twitch\.tv\/([A-Za-z0-9_]+)$/)
-  if (twitchChannel) return 'https://player.twitch.tv/?channel=' + twitchChannel[1] + '&parent=hyperfy.io'
-  const twitchVod = url.match(/twitch\.tv\/videos\/([0-9]+)/)
-  if (twitchVod) return 'https://player.twitch.tv/?video=' + twitchVod[1] + '&parent=hyperfy.io'
-  return url
-}
+  function buildEmbedUrl(rawUrl) {
+    const url = String(rawUrl || '').trim()
+    if (!url) return ''
+    const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)
+    if (ytMatch) return 'https://www.youtube.com/embed/' + ytMatch[1] + '?autoplay=1&muted=1&rel=0'
+    const twitchChannel = url.match(/twitch\.tv\/([A-Za-z0-9_]+)$/)
+    if (twitchChannel) return 'https://player.twitch.tv/?channel=' + twitchChannel[1] + '&parent=hyperfy.io'
+    const twitchVod = url.match(/twitch\.tv\/videos\/([0-9]+)/)
+    if (twitchVod) return 'https://player.twitch.tv/?video=' + twitchVod[1] + '&parent=hyperfy.io'
+    return url
+  }
 
-function applyAll() {
-  const src = buildEmbedUrl(config.src)
-  const W = Math.max(0.1, Number(config.width ?? 3))
-  const H = W / (16/9)
-  const factor = Math.max(50, Math.min(800, Number(config.factor ?? 150)))
+  function applyAll() {
+    const src = buildEmbedUrl(config.src)
+    const W = Math.max(0.1, Number(config.width ?? 3))
+    const H = W / (16/9)
+    const factor = Math.max(50, Math.min(800, Number(config.factor ?? 150)))
 
-  holder.position.set(0, H/2, 0)
+    holder.position.set(0, H/2, 0)
 
-  if (src) {
-    if (placeholder) { holder.remove(placeholder); placeholder = null }
-    if (!webview) { webview = app.create('webview'); holder.add(webview) }
-    webview.space = 'world'
-    webview.src = src
-    webview.width = W
-    webview.height = H
-    webview.factor = factor
-    webview.doubleside = true
-    webview.active = true
-  } else {
-    if (webview) { holder.remove(webview); webview = null }
-    if (!placeholder) {
-      placeholder = app.create('prim')
-      placeholder.type = 'box'
-      placeholder.scale.set(W, H, 0.02)
-      placeholder.color = '#444444'
-      placeholder.castShadow = false
-      placeholder.receiveShadow = false
-      holder.add(placeholder)
+    if (src) {
+      if (placeholder) { holder.remove(placeholder); placeholder = null }
+      if (!webview) { webview = app.create('webview'); holder.add(webview) }
+      webview.space = 'world'
+      webview.src = src
+      webview.width = W
+      webview.height = H
+      webview.factor = factor
+      webview.doubleside = true
+      webview.active = true
+    } else {
+      if (webview) { holder.remove(webview); webview = null }
+      if (!placeholder) {
+        placeholder = app.create('prim')
+        placeholder.type = 'box'
+        placeholder.scale.set(W, H, 0.02)
+        placeholder.color = '#444444'
+        placeholder.castShadow = false
+        placeholder.receiveShadow = false
+        holder.add(placeholder)
+      }
     }
   }
+  applyAll()
+  app.on('config', () => applyAll())
 }
-applyAll()
-app.on('config', () => applyAll())
 
 ⛔ NE PAS UTILISER app.on('update') — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
 ⛔ NE PAS UTILISER world.getPlayer() / world.entities.getLocalPlayer() — N'EXISTE PAS dans Hyperfy V2, CRASHE.
@@ -375,9 +377,9 @@ app.on('config', () => applyAll())
 - N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne.
 - JAMAIS écrire if (condition) { ... return } else { ... } — le else est du code mort après un return.
 - TOUJOURS utiliser config.xxx pour lire les valeurs configurables, JAMAIS props.xxx.
-- Garder if (world.isClient) { ... } pour wrapper tout le code client (pas de return en top-level).
-- app.keepActive = true — optionnel, seulement si nécessaire (webview, audio).
-- app.onDispose — optionnel, si nettoyage nécessaire.
+- TOUJOURS wrapper le code client avec if (world.isClient) { ... } (JAMAIS de return en top-level).
+- app.keepActive = true — à l'intérieur du if (world.isClient), si nécessaire.
+- app.onDispose — optionnel.
 
 - TOUJOURS sécuriser l'accès aux assets uploadés avec try/catch :
     function getFileUrl(propVal) {

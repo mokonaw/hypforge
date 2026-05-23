@@ -617,20 +617,22 @@ function removeFunctionDef(src, name) {
 }
 
 /**
- * Ensure `if (!world.isClient) return` is the very first executable line,
- * immediately followed by `app.keepActive = true`.
+ * Ensure `if (world.isClient) {` wraps all client code (no top-level return).
  */
 function ensureIsClientGuard(scriptSource) {
-  const guard = 'if (!world.isClient) return'
-  const keepActive = 'app.keepActive = true'
+  const guard = 'if (world.isClient) {'
 
-  // Remove any existing occurrences of both lines (we'll re-insert at top)
-  let lines = scriptSource.split('\n').filter(l => l.trim() !== guard && l.trim() !== keepActive)
+  // Remove any existing guard lines
+  let lines = scriptSource.split('\n').filter(l => {
+    const t = l.trim()
+    return t !== 'if (!world.isClient) return' && t !== 'app.keepActive = true' && t !== 'if (world.isClient) {'
+  })
 
   // Remove leading blank lines
   while (lines.length > 0 && lines[0].trim() === '') lines.shift()
 
-  return guard + '\n' + keepActive + '\n\n' + lines.join('\n')
+  // Wrap everything in if (world.isClient) { ... }
+  return guard + '\n' + lines.join('\n') + '\n}'
 }
 
 /**
