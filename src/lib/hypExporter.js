@@ -251,19 +251,29 @@ function patchScript(scriptSource) {
   // Remove any clearTimeout(proximityTimer) that may remain anywhere in the script
   scriptSource = scriptSource.replace(/^[ \t]*clearTimeout\s*\(\s*proximityTimer\s*\)\s*;?[ \t]*\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*proximityTimer\s*=\s*null\s*;?[ \t]*\n/gm, '')
-  // Remove orphan proximityAction variable declaration
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+proximityAction\s*=\s*[^\n]+\n/m, '')
-  // Remove app.remove(proximityAction) in onDispose
-  scriptSource = scriptSource.replace(/^[ \t]*(?:try\s*\{[^}]*\}\s*catch[^}]*\}|if\s*\([^)]*proximityAction[^)]*\)[^\n]*|app\.remove\s*\(\s*proximityAction\s*\)[^\n]*)[ \t]*\n/gm, '')
+  // Remove orphan proximityAction variable declaration (let or const, top-level or inside function)
+  scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+proximityAction\s*=\s*[^\n]+\n/gm, '')
+  // Remove app.remove(proximityAction) anywhere
+  scriptSource = scriptSource.replace(/^[ \t]*app\.remove\s*\(\s*proximityAction\s*\)\s*;?[ \t]*\n/gm, '')
+  // Remove app.add(proximityAction) anywhere
+  scriptSource = scriptSource.replace(/^[ \t]*app\.add\s*\(\s*proximityAction\s*\)\s*;?[ \t]*\n/gm, '')
+  // Remove entire `proximityAction = app.create(...)` assignment block (multi-line, brace-counted)
+  scriptSource = removeProximityActionBlock(scriptSource)
+  // Remove any remaining bare `proximityAction = ...` assignments (null, undefined, or re-assign)
+  scriptSource = scriptSource.replace(/^[ \t]*proximityAction\s*=[^\n]+\n/gm, '')
+  // Remove any remaining line that solely references proximityAction (e.g. standalone identifier lines)
+  scriptSource = scriptSource.replace(/^[ \t]*proximityAction\s*;?[ \t]*\n/gm, '')
   // Fix screenshotView.visible = !isNear → always visible (proximity removed)
   scriptSource = scriptSource.replace(/\bscreenshotView\.visible\s*=\s*!isNear\b/g, 'screenshotView.visible = true')
-  // Remove `if (isNear) { ... }` multi-line blocks that re-create webview based on proximity
+  // Remove `if (isNear) { ... }` / `if (!isNear) { ... }` multi-line blocks
   scriptSource = removeIfIsNearBlocks(scriptSource)
-  // Remove nearDist/farDist const declarations (only used in removed proximity code)
-  scriptSource = scriptSource.replace(/^[ \t]*const\s+nearDist\s*=[^\n]+\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*const\s+farDist\s*=[^\n]+\n/gm, '')
+  // Remove nearDist/farDist const/let declarations (only used in removed proximity code)
+  scriptSource = scriptSource.replace(/^[ \t]*(?:const|let)\s+nearDist\s*=[^\n]+\n/gm, '')
+  scriptSource = scriptSource.replace(/^[ \t]*(?:const|let)\s+farDist\s*=[^\n]+\n/gm, '')
   // isNear is now unused — remove its declaration
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+isNear\s*=\s*false[ \t]*\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+isNear\s*=\s*false[ \t]*\n/gm, '')
+  // Clean up any double-blank lines left behind
+  scriptSource = scriptSource.replace(/\n{3,}/g, '\n\n')
 
   // Remove app.remove(X) inside removeXxx() functions for nodes that were never app.add()'d
   // (they're in a holder, so only holder.remove() is valid)
@@ -278,6 +288,48 @@ function patchScript(scriptSource) {
   }
 
   return scriptSource
+}
+
+/**
+ * Remove any `proximityAction = app.create('action')` assignment block,
+ * including all the property lines and the trailing app.add(proximityAction).
+ * These blocks span multiple lines and end when indentation returns.
+ */
+function removeProximityActionBlock(src) {
+  // Find `proximityAction = app.create(` anywhere in the source
+  const pattern = /^([ \t]*)proximityAction\s*=\s*app\.create\s*\(/gm
+  let result = src
+  let match
+  while ((match = pattern.exec(result)) !== null) {
+    const blockStart = match.index
+    const indent = match[1]
+    // Scan forward until we find a line at the same or lower indentation level
+    // that is NOT a proximityAction.xxx assignment or app.add(proximityAction)
+    const lines = result.slice(blockStart).split('\n')
+    let lineCount = 0
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li]
+      lineCount++
+      // Stop after the first line that clearly ends the block context
+      // i.e., a line that is NOT continuation of this proximityAction setup
+      if (li === 0) continue // skip the `proximityAction = app.create(...)` line itself
+      const trimmed = line.trim()
+      if (trimmed === '') continue // keep consuming blank lines inside block
+      // Lines that belong to the proximity action setup block
+      if (
+        trimmed.startsWith('proximityAction.') ||
+        trimmed === 'app.add(proximityAction)' ||
+        trimmed === 'app.add(proximityAction);'
+      ) continue
+      // This line doesn't belong — stop here (don't include it)
+      lineCount--
+      break
+    }
+    const blockEnd = blockStart + lines.slice(0, lineCount).join('\n').length + 1 // +1 for \n
+    result = result.slice(0, blockStart) + result.slice(Math.min(blockEnd, result.length))
+    pattern.lastIndex = 0
+  }
+  return result
 }
 
 /**
