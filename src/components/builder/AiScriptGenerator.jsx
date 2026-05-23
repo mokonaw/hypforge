@@ -323,8 +323,11 @@ if (props && typeof props.onChange === 'function') props.onChange(() => applyAll
 app.onDispose = () => { try { app.remove(holder) } catch {} }
 
 ⛔ NE PAS UTILISER app.on('update') — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
-⛔ NE PAS UTILISER world.getPlayer() — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
-⛔ Si l'utilisateur demande une détection de proximité, réponds que ce n'est pas supporté et propose une alternative sans boucle update (ex: une action cliquable via app.create('action')).
+⛔ NE PAS UTILISER world.getPlayer() / world.entities.getLocalPlayer() — N'EXISTE PAS dans Hyperfy V2, CRASHE.
+⛔ NE PAS UTILISER setTimeout pour simuler une boucle de proximité — provoque des comportements imprévisibles.
+⛔ NE PAS déclarer des variables (isNear, lastDist, etc.) liées à une fonctionnalité non implémentable — code mort qui CRASHE.
+⛔ Si l'utilisateur demande une détection de proximité, propose une action cliquable via app.create('action') à la place.
+⛔ NE JAMAIS appeler une fonction qui n'est pas définie dans le script (ex: updateVolume, scheduleProximityCheck si non définies).
 
 === CE QUI N'EXISTE PAS — NE JAMAIS UTILISER ===
   ❌ setInterval / clearInterval — N'EXISTENT PAS, utiliser app.on('update')

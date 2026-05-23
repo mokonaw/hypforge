@@ -85,66 +85,146 @@ function extractPropsFromScript(scriptSource) {
 }
 
 /**
+ * Scan a script for known crash-causing patterns.
+ * Returns a list of detected issues.
+ */
+function detectScriptIssues(src) {
+  const issues = []
+  if (/app\.on\(\s*['"]update['"]/.test(src)) issues.push('app.on(update)')
+  if (/app\.on\(\s*['"]fixedUpdate['"]/.test(src)) issues.push('app.on(fixedUpdate)')
+  if (/world\.getPlayer\(\s*\)/.test(src)) issues.push('world.getPlayer()')
+  if (/app\.create\(\s*['"]image['"]\s*\)/.test(src)) issues.push("app.create('image')")
+  // Detect undeclared isNear: used but never declared with let/var/const
+  if (/\bisNear\b/.test(src) && !/\b(?:let|var|const)\s+isNear\b/.test(src)) issues.push('isNear undeclared')
+  // Detect calls to functions that are never defined
+  const fnDefs = new Set((src.match(/function\s+(\w+)\s*\(/g) || []).map(m => m.match(/function\s+(\w+)/)[1]))
+  const fnCalls = (src.match(/\b(\w+)\s*\(/g) || []).map(m => m.replace('(', '').trim())
+  const builtins = new Set(['setTimeout','clearTimeout','Math','String','Number','Boolean','Array','Object','console','app','world','props','fetch','uuid','str','num','parseInt','parseFloat','isNaN','Infinity'])
+  for (const call of fnCalls) {
+    if (!fnDefs.has(call) && !builtins.has(call) && /^[a-z]/.test(call)) {
+      // Heuristic: if a camelCase fn is called but never defined, flag it
+      if (['updateVolume','scheduleProximityCheck','getDistanceToApp','getLocalPlayer'].includes(call) && !fnDefs.has(call)) {
+        issues.push(`${call}() called but not defined`)
+      }
+    }
+  }
+  return issues
+}
+
+/**
  * Patch known broken patterns that crash Hyperfy at import time.
  * Called before embedding the script in the .hyp file.
  */
 function patchScript(scriptSource) {
-  // Replace app.create('image') — doesn't exist in Hyperfy V2, crashes at import
+  // Replace app.create('image') — doesn't exist in Hyperfy V2
   scriptSource = scriptSource.replace(/app\.create\(\s*['"]image['"]\s*\)/g, "app.create('webview')")
 
-  // Remove imgPlane.fit = ... (not a valid webview prop)
-  scriptSource = scriptSource.replace(/\bimgPlane\.fit\s*=\s*[^\n]+\n?/g, '')
+  // Remove .fit property (not valid on webview)
+  scriptSource = scriptSource.replace(/\b\w+\.fit\s*=\s*[^\n]+\n?/g, '')
 
-  // Remove app.on('update', ...) blocks — doesn't exist in Hyperfy V2, crashes at import
-  // Use a greedy approach that handles nested braces by removing line by line
-  scriptSource = scriptSource.replace(/app\.on\(\s*['"]update['"]\s*,[\s\S]*?\}\s*\)\s*\n?/g, '')
-  scriptSource = scriptSource.replace(/app\.on\(\s*['"]fixedUpdate['"]\s*,[\s\S]*?\}\s*\)\s*\n?/g, '')
+  // Remove app.on('update'/'fixedUpdate') blocks entirely
+  // Handle both arrow and regular function forms, possibly nested braces
+  scriptSource = removeAppOnBlocks(scriptSource, 'update')
+  scriptSource = removeAppOnBlocks(scriptSource, 'fixedUpdate')
 
   // Replace world.getPlayer() — doesn't exist in Hyperfy V2
   scriptSource = scriptSource.replace(/world\.getPlayer\(\s*\)/g, 'null')
 
-  // Fix prim scale: replace .scale.set(x, y, z) calls on newly created prims
-  // The prim config must include scale as array, not via .scale.set() after creation
-  // We can't easily fix this in regex for arbitrary vars, but we can catch the common pattern
-  // where scale.set is called immediately after create('prim')
-  scriptSource = scriptSource.replace(/(\bapp\.create\('prim',\s*\{)([\s\S]*?)(\})\s*\)\s*\n([\s\t]*)(\w+)\.scale\.set\(([^)]+)\)/g,
-    (match, open, body, close, indent, varName, scaleArgs) => {
-      // Only patch if scale not already in config
-      if (body.includes('scale:')) return match
-      const args = scaleArgs.split(',').map(s => s.trim())
-      const scaleArr = '[' + args.join(', ') + ']'
-      return `${open}${body},\n${indent}  scale: ${scaleArr}${close})`
-    }
-  )
-
-  // Fix prim added to app instead of holder — if a var named placeholderPane/placeholder
-  // is added to app directly, change to holder.add (heuristic for common AI pattern)
+  // Fix prim added to app instead of holder
   scriptSource = scriptSource.replace(/\bapp\.add\(placeholderPane\)/g, 'holder.add(placeholderPane)')
   scriptSource = scriptSource.replace(/\bapp\.remove\(placeholderPane\)/g, 'holder.remove(placeholderPane)')
 
-  // Remove dead proximity variables if update loop was removed
-  scriptSource = scriptSource.replace(/^let\s+isNear\s*=\s*false\s*\n/m, '')
-  scriptSource = scriptSource.replace(/^let\s+lastDist\s*=\s*[^\n]+\n/m, '')
-  scriptSource = scriptSource.replace(/^let\s+volumeAudio\s*=\s*null\s*\n/m, '')
-  scriptSource = scriptSource.replace(/^function\s+updateVolume\s*\([^)]*\)\s*\{[\s\S]*?\n\}\n/m, '')
-  scriptSource = scriptSource.replace(/^function\s+getProximityDist\s*\([^)]*\)\s*\{[^\n]+\}\n/m, '')
+  // Remove dead proximity/volume variables and functions
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+isNear\s*=\s*false[ \t]*\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+lastDist\s*=\s*[^\n]+\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+volumeAudio\s*=\s*[^\n]+\n/m, '')
+  scriptSource = scriptSource.replace(/^[ \t]*let\s+proximityCheckTimeout\s*=\s*[^\n]+\n/m, '')
 
-  // Remove redundant try/catch around app.get('Block') — no GLB in blueprint without model
-  scriptSource = scriptSource.replace(/\btry\s*\{\s*const block = app\.get\('Block'\)[^\n]*\n?\s*\}\s*catch\(e\)\s*\{\s*\}\s*\n?/g, '')
+  // Remove function bodies for known dead functions
+  scriptSource = removeFunctionDef(scriptSource, 'updateVolume')
+  scriptSource = removeFunctionDef(scriptSource, 'getProximityDist')
+  scriptSource = removeFunctionDef(scriptSource, 'getDistanceToApp')
+  scriptSource = removeFunctionDef(scriptSource, 'getLocalPlayer')
+  scriptSource = removeFunctionDef(scriptSource, 'scheduleProximityCheck')
 
-  // Remove proximityDistance from configure if isNear/proximity logic was removed
-  // (remove the whole section if it only had proximityDistance)
-  scriptSource = scriptSource.replace(/\s*\{\s*type:\s*'section'[^}]*key:\s*'sec_proximity'[^}]*\},?\n?/g, '')
-  scriptSource = scriptSource.replace(/\s*\{\s*type:\s*'number'[^}]*key:\s*'proximityDistance'[^}]*\},?\n?/g, '')
+  // After removing scheduleProximityCheck, remove any calls to it too
+  scriptSource = scriptSource.replace(/^[ \t]*scheduleProximityCheck\(\s*\)\s*;?[ \t]*\n/m, '')
 
-  // Move app.keepActive = true to be right after the isClient guard
-  // Remove it from wherever it currently is
-  const hasKeepActive = scriptSource.includes('app.keepActive = true')
-  if (hasKeepActive) {
-    scriptSource = scriptSource.replace(/\napp\.keepActive\s*=\s*true\s*\n/g, '\n')
+  // Remove redundant try/catch around app.get('Block')
+  scriptSource = scriptSource.replace(/[ \t]*try\s*\{\s*const block = app\.get\([^)]+\)[^\n]*\n?\s*\}\s*catch\([^)]*\)\s*\{\s*\}\s*\n?/g, '')
+
+  // Remove proximityDistance prop from configure() since proximity logic was removed
+  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]sec_proximity['"][^}]*\},?\n?/g, '')
+  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]proximityDistance['"][^}]*\},?\n?/g, '')
+
+  // Remove app.keepActive — will be re-inserted at the correct position by ensureIsClientGuard
+  scriptSource = scriptSource.replace(/^[ \t]*app\.keepActive\s*=\s*true[ \t]*\n/m, '')
+
+  // After all patches, if isNear is still referenced but undeclared, inject declaration
+  if (/\bisNear\b/.test(scriptSource) && !/\b(?:let|var|const)\s+isNear\b/.test(scriptSource)) {
+    // inject after the keeper line (first non-empty line after the header)
+    scriptSource = scriptSource.replace(/^(if \(!world\.isClient\) return\napp\.keepActive = true\n)/m,
+      '$1let isNear = false\n')
   }
 
+  // Same for updateVolume calls — remove any remaining calls
+  scriptSource = scriptSource.replace(/^[ \t]*updateVolume\([^)]*\)\s*;?[ \t]*\n/gm, '')
+
   return scriptSource
+}
+
+/**
+ * Remove an app.on('eventName', ...) block, handling nested braces.
+ */
+function removeAppOnBlocks(src, eventName) {
+  const pattern = new RegExp(`app\\.on\\(\\s*['"]${eventName}['"]\\s*,`, 'g')
+  let result = src
+  let match
+  while ((match = pattern.exec(result)) !== null) {
+    const start = match.index
+    // Find the matching closing `)` by counting braces
+    let depth = 0
+    let i = start
+    let foundOpen = false
+    while (i < result.length) {
+      if (result[i] === '{') { depth++; foundOpen = true }
+      else if (result[i] === '}') { depth-- }
+      if (foundOpen && depth === 0) {
+        // consume the closing `)` and optional newline
+        let end = i + 1
+        while (end < result.length && (result[end] === ')' || result[end] === ';' || result[end] === '\n' || result[end] === '\r')) end++
+        result = result.slice(0, start) + result.slice(end)
+        pattern.lastIndex = 0 // reset since string changed
+        break
+      }
+      i++
+    }
+  }
+  return result
+}
+
+/**
+ * Remove a named function definition from source.
+ */
+function removeFunctionDef(src, name) {
+  const pattern = new RegExp(`function\\s+${name}\\s*\\([^)]*\\)\\s*\\{`)
+  const match = pattern.exec(src)
+  if (!match) return src
+  const start = match.index
+  let depth = 0
+  let i = start
+  let foundOpen = false
+  while (i < src.length) {
+    if (src[i] === '{') { depth++; foundOpen = true }
+    else if (src[i] === '}') { depth-- }
+    if (foundOpen && depth === 0) {
+      let end = i + 1
+      while (end < src.length && (src[end] === '\n' || src[end] === '\r')) end++
+      return src.slice(0, start) + src.slice(end)
+    }
+    i++
+  }
+  return src
 }
 
 /**
@@ -230,7 +310,7 @@ export async function buildHypFile({
   // --- Blueprint ---
   const blueprint = {
     id: nanoid(10),
-    version: 2,
+    version: 11,
     name: name || 'Untitled',
     image: null,
     author: author || null,
