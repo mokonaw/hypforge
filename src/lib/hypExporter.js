@@ -303,7 +303,7 @@ function patchScript(scriptSource) {
   // a `return` and the `else` branch becomes unreachable dead code after proximity removal.
   // Use brace-counting to handle multi-line else bodies correctly.
   scriptSource = removeOrphanElseBlocks(scriptSource)
-  scriptSource = removeStrayElseBlocks(scriptSource)
+  // REMOVED: removeStrayElseBlocks — was removing legitimate else blocks
   // Remove orphan `}catch {} }` — when a try/catch was partially removed and left `}catch {}`
   // Also handles double `catch {}` on same line OR on separate lines (e.g. `} catch {}\ncatch {} }`)
   // Must run BEFORE removeOrphanClosingBraces so the stray `}` it leaves behind is caught
