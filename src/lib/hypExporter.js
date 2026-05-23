@@ -581,26 +581,39 @@ function removeFunctionDef(src, name) {
 }
 
 /**
- * Remove problematic patterns but keep app.configure() at top level.
- * DO NOT wrap in if (world.isClient) - breaks Hyperfy's config parsing.
+ * Ensure script structure is valid for Hyperfy.
+ * KEEP `if (!world.isClient) return` and `app.keepActive = true` - they are required!
+ * Only remove broken `if (world.isClient) { ... }` wrappers around app.configure().
  */
 function ensureIsClientGuard(scriptSource) {
-  // Just remove the problematic lines, don't add any wrapper
-  let lines = scriptSource.split('\n').filter(l => {
-    const t = l.trim()
-    // Remove these patterns but DON'T add wrapper
-    if (t === 'if (!world.isClient) return') return false
-    if (t === 'app.keepActive = true') return false
-    if (t === 'if (world.isClient) {') return false
-    if (t === '}') {
-      // Check if this is a lone closing brace from removed wrapper
-      // Keep it only if it matches an actual function/block
-      return true
+  // Only remove `if (world.isClient) {` wrappers (NOT the `if (!world.isClient) return` pattern)
+  let result = scriptSource
+  const wrapperPattern = /if\s*\(\s*world\.isClient\s*\)\s*\{/g
+  let match
+  while ((match = wrapperPattern.exec(result)) !== null) {
+    const start = match.index
+    // Find matching closing brace
+    let depth = 0
+    let i = start
+    let foundOpen = false
+    while (i < result.length) {
+      if (result[i] === '{') { depth++; foundOpen = true }
+      else if (result[i] === '}') { depth-- }
+      if (foundOpen && depth === 0) {
+        // Remove the `if (world.isClient) {` line and this closing brace
+        const lineStart = result.lastIndexOf('\n', start) + 1
+        let end = i + 1
+        while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
+        result = result.slice(0, lineStart) + result.slice(end)
+        wrapperPattern.lastIndex = 0
+        break
+      }
+      i++
     }
-    return true
-  })
+  }
 
-  // Remove leading blank lines
+  // Remove leading blank lines only
+  const lines = result.split('\n')
   while (lines.length > 0 && lines[0].trim() === '') lines.shift()
 
   return lines.join('\n')
