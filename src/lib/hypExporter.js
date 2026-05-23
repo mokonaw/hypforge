@@ -653,3 +653,19 @@ export async function sha256HexSync(buffer) {
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }
+
+/**
+ * Legacy export for compatibility - use prepareHypData instead.
+ * @deprecated Use prepareHypData() for client-side assembly
+ */
+export function buildHypFile(opts) {
+  console.warn('[buildHypFile] Deprecated: use prepareHypData() and client-side assembly instead')
+  // Return a mock structure to avoid breaking imports
+  return prepareHypData({
+    name: opts.name,
+    description: opts.description,
+    author: opts.author,
+    script: opts.customScript || '',
+    effectParams: opts.effectParams || {},
+  })
+}
