@@ -9,7 +9,11 @@ Hyperfy est un moteur de monde virtuel 3D. Les apps Hyperfy sont des scripts Jav
 
 === RÈGLES STRICTES DU RUNTIME HYPERFY V2 ===
 
-GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clearTimeout
+GLOBALS DISPONIBLES : app, world, config, fetch, num, str, uuid, setTimeout, clearTimeout
+
+CRITIQUE : L'objet de configuration s'appelle config, PAS props.
+- Lire les valeurs avec config.monChamp (ex: config.url, config.width)
+- JAMAIS utiliser props.xxx ou props.onChange — ça n'existe pas dans Hyperfy
 
 ⚠️ IMPORTANT : setInterval N'EXISTE PAS dans Hyperfy V2.
 ⚠️ CRITIQUE : app.on('update', ...) N'EXISTE PAS et CRASHE l'import — NE JAMAIS UTILISER.
@@ -26,11 +30,11 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
   app.configure([...fields]) — déclare les champs éditables dans l'UI Hyperfy (TOUJOURS en premier dans le script)
   app.onDispose = () => {...} — nettoyage quand l'app est détruite (supprimer DOM, nodes, etc.)
 
---- props / config ---
-  props (alias: config) = valeurs des champs définis par app.configure()
-  Les deux noms fonctionnent : props.monChamp ET config.monChamp sont équivalents
-  Lire avec props.monChamp ou config.monChamp — JAMAIS de déstructuration
-  props.onChange(() => applyAll()) — callback appelé à chaque changement de props dans l'UI Hyperfy
+--- config ---
+  config = valeurs des champs définis par app.configure()
+  Lire avec config.monChamp (ex: config.url, config.width)
+  JAMAIS de déstructuration
+  Pour écouter les changements : app.on('config', () => applyAll())
 
 --- world ---
   world.isClient — boolean, true si exécuté côté navigateur
@@ -75,9 +79,9 @@ GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clea
     }
     const target = findFirstMesh(app)
 
---- props.file — asset uploadé ---
-  props.file?.url — URL de l'asset uploadé (string ou undefined)
-  Toujours vérifier : const fileUrl = props.file?.url ? String(props.file.url).trim() : ''
+--- config.file — asset uploadé ---
+  config.file?.url — URL de l'asset uploadé (string ou undefined)
+  Toujours vérifier : const fileUrl = config.file?.url ? String(config.file.url).trim() : ''
 
 === NODES DISPONIBLES via app.create('nom') ===
 
@@ -248,15 +252,14 @@ Types disponibles :
   uitext.textShadow = '0 0 10px #color'
   uitext.letterSpacing = '2px'
 
-=== PATTERN RECOMMANDÉ — applyAll avec props.onChange ===
-// Toujours structurer le script avec des fonctions apply* appelées au init ET sur changement de props
+=== PATTERN RECOMMANDÉ — applyAll avec config ===
+// Toujours structurer le script avec des fonctions apply* appelées au init ET sur changement de config
 function applyAll() {
   // recalcule et applique toutes les dimensions, positions, visibilités
 }
 applyAll()
-if (props && typeof props.onChange === 'function') {
-  props.onChange(() => applyAll())
-}
+// Écouter les changements de config (optionnel, selon la version Hyperfy)
+// app.on('config', () => applyAll())
 
 === EMBED YOUTUBE / TWITCH — règles critiques ===
 ⚠️ YouTube REQUIERT &muted=1 dans l'URL embed sinon la politique autoplay des navigateurs bloque la vidéo (son audible mais image noire/figée).
@@ -279,9 +282,6 @@ function buildEmbedUrl(rawUrl, autoplay) {
 }
 
 === EXEMPLE — webview YouTube/Twitch ===
-if (!world.isClient) return
-app.keepActive = true
-
 app.configure([
   { type: 'text', key: 'src', label: 'URL YouTube/Twitch/Web', initial: '' },
   { type: 'number', key: 'width', label: 'Largeur (m)', initial: 3 },
@@ -305,8 +305,8 @@ function buildEmbedUrl(rawUrl) {
 }
 
 function applyAll() {
-  const src = buildEmbedUrl(props.src)
-  const W = Math.max(0.05, Number(props.width ?? 3))
+  const src = buildEmbedUrl(config.src)
+  const W = Math.max(0.05, Number(config.width ?? 3))
   const H = W / (16/9)
   if (!src) { if (webview) { holder.remove(webview); webview = null }; return }
   if (!webview) { webview = app.create('webview'); holder.add(webview) }
@@ -314,13 +314,11 @@ function applyAll() {
   webview.src = src
   webview.width = W
   webview.height = H
-  webview.factor = Number(props.factor ?? 150)
+  webview.factor = Number(config.factor ?? 150)
   webview.doubleside = true
   holder.position.set(0, H/2, 0)
 }
 applyAll()
-if (props && typeof props.onChange === 'function') props.onChange(() => applyAll())
-app.onDispose = () => { try { app.remove(holder) } catch {} }
 
 ⛔ NE PAS UTILISER app.on('update') — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
 ⛔ NE PAS UTILISER world.getPlayer() / world.entities.getLocalPlayer() — N'EXISTE PAS dans Hyperfy V2, CRASHE.
@@ -354,12 +352,13 @@ app.onDispose = () => { try { app.remove(holder) } catch {} }
 - Pour ouvrir des liens : toujours vérifier world.isClient avant world.open().
 - Pour les webviews : NE PAS créer si src est vide.
 - Utiliser app.onDispose pour nettoyer les nodes et effets de bord.
-- N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne — inutile et source de confusion.
-- JAMAIS écrire if (condition) { ... return } else { ... } — le else est du code mort après un return. Écrire plutôt :
-    if (!condition) { ... return }
-    // suite normale ici (pas de else)
+- N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne.
+- JAMAIS écrire if (condition) { ... return } else { ... } — le else est du code mort après un return.
+- TOUJOURS utiliser `config.xxx` pour lire les valeurs configurables, JAMAIS `props.xxx`.
+- Supprimer `if (!world.isClient) return` et `app.keepActive = true` — inutile.
+- Supprimer `app.onDispose` — API non garantie.
 
-- TOUJOURS sécuriser l'accès aux props de type 'file' (assets uploadés) avec try/catch :
+- TOUJOURS sécuriser l'accès aux assets uploadés avec try/catch :
     function getFileUrl(propVal) {
       try {
         if (!propVal) return ''
@@ -403,8 +402,8 @@ ${prompt}
 
 Génère le script Hyperfy index.js complet.
 - Utilise app.configure([...]) pour déclarer les champs configurables (URL, vitesse, etc.)
-- Lis les valeurs avec props.xxx
-- Si des props configurables existent, ajoute aussi en première ligne : // PROPS: {"key": "defaultValue"} (pour l'UI du builder)
+- Lis les valeurs avec config.xxx (JAMAIS props.xxx)
+- Si des champs configurables existent, ajoute aussi en première ligne : // PROPS: {"key": "defaultValue"} (pour l'UI du builder)
 - N'utilise QUE les nodes et APIs documentés ci-dessus.
 - Code JavaScript brut uniquement, aucun markdown.`,
         model: 'claude_sonnet_4_6',
