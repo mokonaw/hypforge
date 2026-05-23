@@ -283,12 +283,14 @@ function buildEmbedUrl(rawUrl, autoplay) {
 }
 
 === EXEMPLE — webview YouTube/Twitch ===
-if (world.isClient) {
-  app.configure([
-    { type: 'text', key: 'src', label: 'URL YouTube/Twitch/Web', initial: '' },
-    { type: 'number', key: 'width', label: 'Largeur (m)', initial: 3 },
-    { type: 'number', key: 'factor', label: 'Résolution', initial: 150 },
-  ])
+if (!world.isClient) return
+app.keepActive = true
+
+app.configure([
+  { type: 'text', key: 'src', label: 'URL YouTube/Twitch/Web', initial: '' },
+  { type: 'number', key: 'width', label: 'Largeur (m)', initial: 3 },
+  { type: 'number', key: 'factor', label: 'Résolution', initial: 150 },
+])
 
   const holder = app.create('group')
   app.add(holder)
@@ -377,9 +379,9 @@ if (world.isClient) {
 - N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne.
 - JAMAIS écrire if (condition) { ... return } else { ... } — le else est du code mort après un return.
 - TOUJOURS utiliser config.xxx pour lire les valeurs configurables, JAMAIS props.xxx.
-- TOUJOURS wrapper le code client avec if (world.isClient) { ... } (JAMAIS de return en top-level).
-- app.keepActive = true — à l'intérieur du if (world.isClient), si nécessaire.
-- app.onDispose — optionnel.
+- JAMAIS wrapper app.configure() dans un if — doit être au top-level.
+- if (!world.isClient) return — OK en première ligne pour sortir tôt (optionnel).
+- app.keepActive = true — après le guard si utilisé.
 
 - TOUJOURS sécuriser l'accès aux assets uploadés avec try/catch :
     function getFileUrl(propVal) {

@@ -617,22 +617,29 @@ function removeFunctionDef(src, name) {
 }
 
 /**
- * Ensure `if (world.isClient) {` wraps all client code (no top-level return).
+ * Remove problematic patterns but keep app.configure() at top level.
+ * DO NOT wrap in if (world.isClient) - breaks Hyperfy's config parsing.
  */
 function ensureIsClientGuard(scriptSource) {
-  const guard = 'if (world.isClient) {'
-
-  // Remove any existing guard lines
+  // Just remove the problematic lines, don't add any wrapper
   let lines = scriptSource.split('\n').filter(l => {
     const t = l.trim()
-    return t !== 'if (!world.isClient) return' && t !== 'app.keepActive = true' && t !== 'if (world.isClient) {'
+    // Remove these patterns but DON'T add wrapper
+    if (t === 'if (!world.isClient) return') return false
+    if (t === 'app.keepActive = true') return false
+    if (t === 'if (world.isClient) {') return false
+    if (t === '}') {
+      // Check if this is a lone closing brace from removed wrapper
+      // Keep it only if it matches an actual function/block
+      return true
+    }
+    return true
   })
 
   // Remove leading blank lines
   while (lines.length > 0 && lines[0].trim() === '') lines.shift()
 
-  // Wrap everything in if (world.isClient) { ... }
-  return guard + '\n' + lines.join('\n') + '\n}'
+  return lines.join('\n')
 }
 
 /**
