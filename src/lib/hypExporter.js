@@ -116,110 +116,51 @@ function detectScriptIssues(src) {
  * Called before embedding the script in the .hyp file.
  */
 function patchScript(scriptSource) {
-  // Replace app.create('image') — doesn't exist in Hyperfy V2
+  // === MINIMAL PATCHING ONLY ===
+  // The script is preserved as-is. Only fix CRITICAL bugs that crash Hyperfy at import.
+
+  // 1. Replace app.create('image') — doesn't exist in Hyperfy V2, will crash
   scriptSource = scriptSource.replace(/app\.create\(\s*['"]image['"]\s*\)/g, "app.create('webview')")
 
-  // Remove .fit property (not valid on webview)
+  // 2. Remove .fit property (not valid on webview)
   scriptSource = scriptSource.replace(/\b\w+\.fit\s*=\s*[^\n]+\n?/g, '')
 
-  // Remove app.on('update'/'fixedUpdate') blocks entirely
-  // Handle both arrow and regular function forms, possibly nested braces
+  // 3. Remove app.on('update'/'fixedUpdate') — these don't exist in Hyperfy V2, will crash
   scriptSource = removeAppOnBlocks(scriptSource, 'update')
   scriptSource = removeAppOnBlocks(scriptSource, 'fixedUpdate')
 
-  // Replace world.getPlayer() — doesn't exist in Hyperfy V2
+  // 4. Replace world.getPlayer() — doesn't exist in Hyperfy V2
   scriptSource = scriptSource.replace(/world\.getPlayer\(\s*\)/g, 'null')
   
-  // Replace world.entities.getLocalPlayer() — doesn't exist in Hyperfy V2
+  // 5. Replace world.entities.getLocalPlayer() — doesn't exist in Hyperfy V2
   scriptSource = scriptSource.replace(/world\.entities\.getLocalPlayer\(\s*\)/g, 'null')
 
-  // Fix prim added to app instead of holder
+  // 6. Fix prim added to app instead of holder (rare case)
   scriptSource = scriptSource.replace(/\bapp\.add\(placeholderPane\)/g, 'holder.add(placeholderPane)')
   scriptSource = scriptSource.replace(/\bapp\.remove\(placeholderPane\)/g, 'holder.remove(placeholderPane)')
 
-  // CRITICAL: Fix double-attach crashes
-  // 1. Remove duplicate consecutive app.add(X) calls (anywhere in the file)
-  scriptSource = scriptSource.replace(
-    /^([ \t]*app\.add\((\w+)\)[ \t]*)\n[ \t]*app\.add\(\2\)/gm,
-    '$1'
-  )
-  // 2. Remove ALL app.add(X) when X is ALSO added to a holder/group anywhere in the script
-  //    (double parenté = crash regardless of where in the code it appears)
+  // 7. CRITICAL: Fix double-attach crashes (node added to both app AND holder)
   const holderAdded = new Set()
   const holderAddPattern = /\b(?:\w+)\s*\.add\(\s*(\w+)\s*\)/g
   let hm
   while ((hm = holderAddPattern.exec(scriptSource)) !== null) {
-    // Collect varNames added to any object that is NOT 'app' itself
-    // We'll filter out app.add() targets vs non-app.add() targets below
     holderAdded.add(hm[1])
   }
-  // Now remove from holderAdded any varNames that are ONLY added via app.add() (i.e. not in holder)
   const appOnlyAdded = new Set()
   const appAddPattern = /\bapp\s*\.add\(\s*(\w+)\s*\)/g
   let am
   while ((am = appAddPattern.exec(scriptSource)) !== null) appOnlyAdded.add(am[1])
-  // holderAdded = varNames added to BOTH app and something else → strip app.add()
   for (const varName of holderAdded) {
-    if (!appOnlyAdded.has(varName)) continue // not added to app at all, nothing to strip
-    // Check it's also added to a non-app object
+    if (!appOnlyAdded.has(varName)) continue
     const nonAppRe = new RegExp(`\\b(?!app\\b)\\w+\\.add\\(\\s*${varName}\\s*\\)`)
     if (!nonAppRe.test(scriptSource)) continue
-    // Strip all app.add(varName) lines
     const re = new RegExp(`^[ \\t]*app\\.add\\(\\s*${varName}\\s*\\)[ \\t]*;?[ \\t]*\\n`, 'gm')
     scriptSource = scriptSource.replace(re, '')
   }
 
-  // Remove dead proximity/volume variables — only if NOT used elsewhere
-  // isNear: only remove declaration if the functions that use it (showNear/showFar) are also gone
-  const usesIsNear = /\bisNear\b/.test(scriptSource.replace(/^[ \t]*let\s+isNear\s*=[^\n]+\n/m, ''))
-  if (!usesIsNear) {
-    scriptSource = scriptSource.replace(/^[ \t]*let\s+isNear\s*=\s*false[ \t]*\n/m, '')
-  }
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+lastDist\s*=\s*[^\n]+\n/m, '')
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+volumeAudio\s*=\s*[^\n]+\n/m, '')
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+proximityCheckTimeout\s*=\s*[^\n]+\n/m, '')
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+volumeTimeout\s*=\s*[^\n]+\n/m, '')
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+isNearby\s*=\s*[^\n]+\n/m, '')
-  // Remove proxDist lines that read props.proximityDistance (never declared in configure)
-  // scriptSource = scriptSource.replace(/^[ \t]*const\s+proxDist\s*=[^\n]+proximityDistance[^\n]+\n/gm, '')
-  // ^^^ COMMENTED OUT — proximityDistance IS valid when declared in app.configure()
-
-  // KEEP ALL FUNCTION DEFINITIONS — don't remove anything the user/IA explicitly wrote
-  // updateVolume, getDistanceToApp, scheduleProximityCheck, etc. are all valid patterns
-
-  // After removing proximity/action functions, remove all their call sites and dead vars
-  scriptSource = scriptSource.replace(/^[ \t]*scheduleProximityCheck\([^)]*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*doProximityCheck\([^)]*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*setupProximityLoop\([^)]*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*startProximityLoop\([^)]*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*scheduleLeaveCheck\([^)]*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*restoreAction\([^)]*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*setupActions\(\s*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*removeActions\(\s*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+actionNear\s*=\s*[^\n]+\n/m, '')
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+actionFar\s*=\s*[^\n]+\n/m, '')
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+proximityTimer\s*=\s*[^\n]+\n/m, '')
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+lastPlayerPos\s*=\s*[^\n]+\n/m, '')
-  scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+triggerAction\s*=\s*[^\n]+\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+leaveTimer\s*=\s*[^\n]+\n/gm, '')
-  // KEEP ALL clearTimeout CALLS — don't remove anything the user/IA explicitly wrote
-  // proximityTimer, leaveTimer cleanup is valid and required
-  // KEEP ALL proximityAction CODE — don't remove anything the user/IA explicitly wrote
-
-  // Remove redundant try/catch around app.get('Block')
-  scriptSource = scriptSource.replace(/[ \t]*try\s*\{\s*const block = app\.get\([^)]+\)[^\n]*\n?\s*\}\s*catch\([^)]*\)\s*\{\s*\}\s*\n?/g, '')
-
-  // KEEP all props in configure() — don't remove anything
-  // sec_proximity, proximityDistance, autoplay, etc. are all valid
-
-  // KEEP app.keepActive = true — don't remove it (required for webview/audio to stay active)
-
-  // KEEP ALL proximity/timer CODE — don't remove anything the user/IA explicitly wrote
-  // triggerAction, proximityAction, leaveTimer, isNear assignments are all valid
-  // KEEP ALL COMMENTS, BRACES, and isNear BLOCKS — don't remove anything the user/IA explicitly wrote
-  // screenshotView.visible = !isNear, if (isNear) {...}, nearDist, farDist are all valid
-
-  // KEEP ALL app.remove() CALLS — don't remove anything the user/IA explicitly wrote
+  // ✅ EVERYTHING ELSE IS PRESERVED EXACTLY AS-IS
+  // No variable removal, no block removal, no aggressive cleanup.
+  // User code + IA-generated code is 100% protected.
 
   return scriptSource
 }
