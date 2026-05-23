@@ -129,6 +129,9 @@ function patchScript(scriptSource) {
 
   // Replace world.getPlayer() — doesn't exist in Hyperfy V2
   scriptSource = scriptSource.replace(/world\.getPlayer\(\s*\)/g, 'null')
+  
+  // Replace world.entities.getLocalPlayer() — doesn't exist in Hyperfy V2
+  scriptSource = scriptSource.replace(/world\.entities\.getLocalPlayer\(\s*\)/g, 'null')
 
   // Fix prim added to app instead of holder
   scriptSource = scriptSource.replace(/\bapp\.add\(placeholderPane\)/g, 'holder.add(placeholderPane)')
@@ -178,37 +181,11 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/^[ \t]*let\s+volumeTimeout\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*let\s+isNearby\s*=\s*[^\n]+\n/m, '')
   // Remove proxDist lines that read props.proximityDistance (never declared in configure)
-  scriptSource = scriptSource.replace(/^[ \t]*const\s+proxDist\s*=[^\n]+proximityDistance[^\n]+\n/gm, '')
+  // scriptSource = scriptSource.replace(/^[ \t]*const\s+proxDist\s*=[^\n]+proximityDistance[^\n]+\n/gm, '')
+  // ^^^ COMMENTED OUT — proximityDistance IS valid when declared in app.configure()
 
-  // Remove function bodies for known dead functions (only if actually unused after patches)
-  // updateVolume: always remove — Hyperfy has no volume API accessible
-  scriptSource = removeFunctionDef(scriptSource, 'updateVolume')
-  scriptSource = removeFunctionDef(scriptSource, 'getProximityDist')
-  // setupVolumeCheck / checkVolume — use non-existent webview.volume API
-  scriptSource = removeFunctionDef(scriptSource, 'setupVolumeCheck')
-  scriptSource = removeFunctionDef(scriptSource, 'checkVolume')
-  // getDistanceToApp + getLocalPlayer: remove only if scheduleProximityCheck is also gone
-  const hasSchedule = /function\s+scheduleProximityCheck\s*\(/.test(scriptSource)
-  if (!hasSchedule) {
-    scriptSource = removeFunctionDef(scriptSource, 'getDistanceToApp')
-    scriptSource = removeFunctionDef(scriptSource, 'getLocalPlayer')
-  }
-  scriptSource = removeFunctionDef(scriptSource, 'scheduleProximityCheck')
-  // Remove the entire setTimeout-based proximity chain
-  scriptSource = removeFunctionDef(scriptSource, 'doProximityCheck')
-  scriptSource = removeFunctionDef(scriptSource, 'setupProximityLoop')
-  scriptSource = removeFunctionDef(scriptSource, 'getLocalPlayerPosition')
-  scriptSource = removeFunctionDef(scriptSource, 'getAppWorldPosition')
-  scriptSource = removeFunctionDef(scriptSource, 'dist3')
-  // showWebview/hideWebview only make sense when driven by proximity loop → remove them
-  scriptSource = removeFunctionDef(scriptSource, 'showWebview')
-  scriptSource = removeFunctionDef(scriptSource, 'hideWebview')
-  // setupActions uses proxDist which is removed → remove it too
-  scriptSource = removeFunctionDef(scriptSource, 'setupActions')
-  scriptSource = removeFunctionDef(scriptSource, 'removeActions')
-  scriptSource = removeFunctionDef(scriptSource, 'startProximityLoop')
-  scriptSource = removeFunctionDef(scriptSource, 'scheduleLeaveCheck')
-  scriptSource = removeFunctionDef(scriptSource, 'restoreAction')
+  // KEEP ALL FUNCTION DEFINITIONS — don't remove anything the user/IA explicitly wrote
+  // updateVolume, getDistanceToApp, scheduleProximityCheck, etc. are all valid patterns
 
   // After removing proximity/action functions, remove all their call sites and dead vars
   scriptSource = scriptSource.replace(/^[ \t]*scheduleProximityCheck\([^)]*\)\s*;?[ \t]*\n/gm, '')
@@ -241,26 +218,13 @@ function patchScript(scriptSource) {
   // Remove redundant try/catch around app.get('Block')
   scriptSource = scriptSource.replace(/[ \t]*try\s*\{\s*const block = app\.get\([^)]+\)[^\n]*\n?\s*\}\s*catch\([^)]*\)\s*\{\s*\}\s*\n?/g, '')
 
-  // Remove proximity-related props from configure() since proximity logic was removed
-  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]sec_proximity['"][^}]*\},?\n?/g, '')
-  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]proximityDistance['"][^}]*\},?\n?/g, '')
-  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]nearDistance['"][^}]*\},?\n?/g, '')
-  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]farDistance['"][^}]*\},?\n?/g, '')
-  scriptSource = scriptSource.replace(/[ \t]*\{[^}]*key:\s*['"]autoplay['"][^}]*\},?\n?/g, '')
+  // KEEP all props in configure() — don't remove anything
+  // sec_proximity, proximityDistance, autoplay, etc. are all valid
 
   // Remove app.keepActive — will be re-inserted at the correct position by ensureIsClientGuard
   scriptSource = scriptSource.replace(/^[ \t]*app\.keepActive\s*=\s*true[ \t]*\n/m, '')
 
-  // Remove any remaining calls to removed functions
-  scriptSource = scriptSource.replace(/^[ \t]*updateVolume\([^)]*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*getProxDist\(\s*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*setupVolumeCheck\(\s*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*checkVolume\(\s*\)\s*;?[ \t]*\n/gm, '')
-  // Remove any clearTimeout(proximityTimer/leaveTimer) that may remain anywhere in the script
-  scriptSource = scriptSource.replace(/^[ \t]*clearTimeout\s*\(\s*proximityTimer\s*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*proximityTimer\s*=\s*null\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*clearTimeout\s*\(\s*leaveTimer\s*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*leaveTimer\s*=\s*null\s*;?[ \t]*\n/gm, '')
+  // KEEP all function calls — don't remove anything the user/IA explicitly wrote
   // Remove if (leaveTimer) { clearTimeout... } blocks
   scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*leaveTimer\s*\)\s*\{[^}]*\}[ \t]*\n?/g, '')
   // Remove triggerAction cleanup lines
