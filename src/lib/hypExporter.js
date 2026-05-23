@@ -347,9 +347,10 @@ function patchScript(scriptSource) {
  * (possibly with blank lines and/or a closing `}` in between). Leaves all other else blocks intact.
  */
 function removeOrphanElseBlocks(src) {
-  // Pattern: `return` → optional whitespace/blank lines → optional `}` (closing brace) → optional whitespace/blank lines → `else {`
+  // Pattern: `return` → optional whitespace/blank lines → `}` (closing brace of if-block) → optional whitespace/blank lines → `else {`
   // The `else {` and its body are unreachable dead code → remove
-  const pattern = /(\breturn\s*;?[ \t]*\n[ \t\n]*\}?[ \t\n]*)else\s*\{/g
+  // Updated to REQUIRE the closing `}` between return and else
+  const pattern = /(\breturn\s*;?[ \t]*\n[ \t\n]*\}[ \t\n]*)else\s*\{/g
   let result = src
   let match
   let maxIterations = 50
