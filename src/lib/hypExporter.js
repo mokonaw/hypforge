@@ -202,18 +202,9 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/^[ \t]*let\s+lastPlayerPos\s*=\s*[^\n]+\n/m, '')
   scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+triggerAction\s*=\s*[^\n]+\n/gm, '')
   scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+leaveTimer\s*=\s*[^\n]+\n/gm, '')
-  // Remove clearTimeout(proximityTimer) calls and related onDispose references to proximityTimer
-  scriptSource = scriptSource.replace(/^[ \t]*(?:if\s*\([^)]*proximityTimer[^)]*\)\s*\{[^}]*\}|clearTimeout\s*\(\s*proximityTimer\s*\)\s*;?\s*proximityTimer\s*=\s*null\s*;?)[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*proximityTimer\s*=\s*null\s*;?[ \t]*\n/gm, '')
-  // Remove the entire if-block pattern: if (proximityTimer !== null) { clearTimeout... }
-  scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*proximityTimer\s*!==\s*null\s*\)\s*\{[\s\S]*?clearTimeout[^}]*\}[ \t]*\n?/g, '')
-  // Remove nearDist/farDist variable declarations inside applyAll when they're only used for removed functions
-  // (keep them if proximityAction is still present — we'll clean up proximityAction block next)
-  // Remove the entire proximityAction creation block (action used only for proximity, which we removed)
-  scriptSource = scriptSource.replace(
-    /[ \t]*if\s*\(\s*proximityAction\s*\)\s*\{[\s\S]*?\}\s*\n[ \t]*const\s+nearDist[\s\S]*?setupProximityLoop[^\n]*\n?/g,
-    ''
-  )
+  // KEEP ALL clearTimeout CALLS — don't remove anything the user/IA explicitly wrote
+  // proximityTimer, leaveTimer cleanup is valid and required
+  // KEEP ALL proximityAction CODE — don't remove anything the user/IA explicitly wrote
 
   // Remove redundant try/catch around app.get('Block')
   scriptSource = scriptSource.replace(/[ \t]*try\s*\{\s*const block = app\.get\([^)]+\)[^\n]*\n?\s*\}\s*catch\([^)]*\)\s*\{\s*\}\s*\n?/g, '')
@@ -221,86 +212,14 @@ function patchScript(scriptSource) {
   // KEEP all props in configure() — don't remove anything
   // sec_proximity, proximityDistance, autoplay, etc. are all valid
 
-  // Remove app.keepActive — will be re-inserted at the correct position by ensureIsClientGuard
-  scriptSource = scriptSource.replace(/^[ \t]*app\.keepActive\s*=\s*true[ \t]*\n/m, '')
+  // KEEP app.keepActive = true — don't remove it (required for webview/audio to stay active)
 
-  // KEEP all function calls — don't remove anything the user/IA explicitly wrote
-  // Remove if (leaveTimer) { clearTimeout... } blocks
-  scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*leaveTimer\s*\)\s*\{[^}]*\}[ \t]*\n?/g, '')
-  // Remove triggerAction cleanup lines
-  scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+triggerAction[^\n]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*triggerAction\s*=[^\n]+\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*app\.add\s*\(\s*triggerAction\s*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*app\.remove\s*\(\s*triggerAction\s*\)\s*;?[ \t]*\n/gm, '')
-  scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*triggerAction\s*\)\s*\{[^}]*\}[ \t]*\n?/g, '')
-  // Remove standalone `isNear = false` or `isNear = true` assignments (undeclared var)
-  scriptSource = scriptSource.replace(/^[ \t]*isNear\s*=\s*(false|true)\s*;?[ \t]*\n/gm, '')
-  // Remove orphan proximityAction variable declaration (let or const, top-level or inside function)
-  scriptSource = scriptSource.replace(/^[ \t]*(?:let|const|var)\s+proximityAction\s*=\s*[^\n]+\n/gm, '')
-  // Remove app.remove(proximityAction) anywhere
-  scriptSource = scriptSource.replace(/^[ \t]*app\.remove\s*\(\s*proximityAction\s*\)\s*;?[ \t]*\n/gm, '')
-  // Remove app.add(proximityAction) anywhere
-  scriptSource = scriptSource.replace(/^[ \t]*app\.add\s*\(\s*proximityAction\s*\)\s*;?[ \t]*\n/gm, '')
-  // Remove entire `proximityAction = app.create(...)` assignment block (multi-line, brace-counted)
-  scriptSource = removeProximityActionBlock(scriptSource)
-  // Remove any remaining bare `proximityAction = ...` assignments (null, undefined, or re-assign)
-  scriptSource = scriptSource.replace(/^[ \t]*proximityAction\s*=[^\n]+\n/gm, '')
-  // Remove any remaining line that solely references proximityAction (e.g. standalone identifier lines)
-  scriptSource = scriptSource.replace(/^[ \t]*proximityAction\s*;?[ \t]*\n/gm, '')
-  // Remove empty `if (proximityAction) { }` or `if (proximityAction) {\n}` blocks
-  scriptSource = scriptSource.replace(/[ \t]*if\s*\(\s*proximityAction\s*\)\s*\{[\s\n]*\}[ \t]*\n?/g, '')
-  // Remove `try { ... } catch(e) {}` blocks referencing removed vars (proximityAction, triggerAction, leaveTimer)
-  scriptSource = scriptSource.replace(/[ \t]*try\s*\{[^}]*(?:proximityAction|triggerAction|leaveTimer)[^}]*\}\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\}[ \t]*\n?/g, '')
-  // Remove dead proximity comment blocks (multi-line comments left after proximity removal)
-  scriptSource = scriptSource.replace(/^[ \t]*\/\/\s*---\s*Gestion proximit[^\n]*\n(?:[ \t]*\/\/[^\n]*\n)*/gm, '')
-  // Fix misindented closing brace left after removing content inside an if-block:
-  // Pattern: any line ending with `= null` or `= null;` followed by a `}` with MORE indentation
-  scriptSource = scriptSource.replace(/([ \t]*\w[^\n]*=\s*null\s*;?[ \t]*\n)([ \t]+\}[ \t]*\n)/g, (m, prev, brace) => {
-    const prevIndent = prev.match(/^([ \t]*)/)[1].length
-    const braceIndent = brace.match(/^([ \t]*)/)[1].length
-    return braceIndent > prevIndent ? prev : m
-  })
-  // Clean up if-blocks whose only remaining content is `varName = null` assignments
-  // (happens when proximity code was inside the block and got removed, leaving just null assignments + misindented `}`)
-  scriptSource = removeDeadIfBlocks(scriptSource)
-  // Remove orphan `else { ... }` blocks — these are left when the preceding `if` block ends with
-  // a `return` and the `else` branch becomes unreachable dead code after proximity removal.
-  // Use brace-counting to handle multi-line else bodies correctly.
-  scriptSource = removeOrphanElseBlocks(scriptSource)
-  // REMOVED: removeStrayElseBlocks — was removing legitimate else blocks
-  // Remove orphan `}catch {} }` — when a try/catch was partially removed and left `}catch {}`
-  // Also handles double `catch {}` on same line OR on separate lines (e.g. `} catch {}\ncatch {} }`)
-  // Must run BEFORE removeOrphanClosingBraces so the stray `}` it leaves behind is caught
-  // First: handle stray `catch {}` line that follows a line ending with `catch {}` (multi-line double catch)
-  scriptSource = scriptSource.replace(/catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\}\s*\n?/g, 'catch {}\n')
-  // Then: handle `}catch {}` patterns (single-line double catch)
-  scriptSource = scriptSource.replace(/\}catch\s*(?:\([^)]*\))?\s*\{[^}]*\}(?:\s*catch\s*(?:\([^)]*\))?\s*\{[^}]*\})*\s*\n?/g, '\n')
-  // After else/catch removal, lone `}` lines may remain. Remove any that would bring brace depth negative.
-  scriptSource = removeOrphanClosingBraces(scriptSource)
+  // KEEP ALL proximity/timer CODE — don't remove anything the user/IA explicitly wrote
+  // triggerAction, proximityAction, leaveTimer, isNear assignments are all valid
+  // KEEP ALL COMMENTS, BRACES, and isNear BLOCKS — don't remove anything the user/IA explicitly wrote
+  // screenshotView.visible = !isNear, if (isNear) {...}, nearDist, farDist are all valid
 
-  // Fix screenshotView.visible = !isNear → always visible (proximity removed)
-  scriptSource = scriptSource.replace(/\bscreenshotView\.visible\s*=\s*!isNear\b/g, 'screenshotView.visible = true')
-  // Remove `if (isNear) { ... }` / `if (!isNear) { ... }` multi-line blocks
-  scriptSource = removeIfIsNearBlocks(scriptSource)
-  // Remove nearDist/farDist const/let declarations (only used in removed proximity code)
-  scriptSource = scriptSource.replace(/^[ \t]*(?:const|let)\s+nearDist\s*=[^\n]+\n/gm, '')
-  scriptSource = scriptSource.replace(/^[ \t]*(?:const|let)\s+farDist\s*=[^\n]+\n/gm, '')
-  // isNear is now unused — remove its declaration
-  scriptSource = scriptSource.replace(/^[ \t]*let\s+isNear\s*=\s*false[ \t]*\n/gm, '')
-  // Clean up any double-blank lines left behind
-  scriptSource = scriptSource.replace(/\n{3,}/g, '\n\n')
-
-  // Remove app.remove(X) inside removeXxx() functions for nodes that were never app.add()'d
-  // (they're in a holder, so only holder.remove() is valid)
-  // Re-run holderAdded detection after all other patches
-  const holderAddedFinal = new Set()
-  const hap2 = /\b(?:holder|group)\s*\.add\(\s*(\w+)\s*\)/g
-  let hm2
-  while ((hm2 = hap2.exec(scriptSource)) !== null) holderAddedFinal.add(hm2[1])
-  for (const varName of holderAddedFinal) {
-    const re = new RegExp(`^[ \\t]*(?:try\\s*\\{\\s*)?app\\.remove\\(\\s*${varName}\\s*\\)(?:\\s*\\}\\s*catch[^}]*\\})?[ \\t]*\\n`, 'gm')
-    scriptSource = scriptSource.replace(re, '')
-  }
+  // KEEP ALL app.remove() CALLS — don't remove anything the user/IA explicitly wrote
 
   return scriptSource
 }
