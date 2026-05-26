@@ -680,7 +680,7 @@ export function buildHypFile(opts) {
  * @param {string} [filename] - Output filename (default: export_application.hyp)
  * @returns {Promise<boolean>} - true on success, throws on failure
  */
-export async function exportViaInjection(nouveauCodeJS, filename = 'export_application.hyp') {
+export async function exportViaInjection(nouveauCodeJS, filename = 'export_application.hyp', meta = {}) {
   // 1. Load the template mould from the uploaded file URL
   const response = await fetch('https://base44.app/api/apps/69ea64ec2a2946b1244fd941/files/mp/public/69ea64ec2a2946b1244fd941/22348c423_fonctionne.hyp')
   if (!response.ok) throw new Error(`Impossible de charger le fichier moule : ${response.status} ${response.statusText}`)
@@ -699,7 +699,10 @@ export async function exportViaInjection(nouveauCodeJS, filename = 'export_appli
   const blueprintObj = parsed.blueprint
   const assets = parsed.assets
 
-  // 4. Critical fix: disable blocking physics collision
+  // 4. Inject app metadata + critical fix
+  if (meta.name) blueprintObj.name = meta.name
+  if (meta.author) blueprintObj.author = meta.author
+  if (meta.desc !== undefined) blueprintObj.desc = meta.desc || null
   if (!blueprintObj.props) blueprintObj.props = {}
   blueprintObj.props.collision = false
 

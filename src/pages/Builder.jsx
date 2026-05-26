@@ -116,7 +116,7 @@ export default function Builder() {
     setBusy(true)
     try {
       const filename = `${meta.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'app'}.hyp`
-      await exportViaInjection(script, filename)
+      await exportViaInjection(script, filename, { name: meta.name, author: meta.author, desc: meta.description })
       toast.success(`${filename} exporté !`)
     } catch (e) {
       console.error(e)
