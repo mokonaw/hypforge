@@ -11,6 +11,7 @@ import AppShell from '@/components/layout/AppShell'
 import Home from '@/pages/Home'
 import Builder from '@/pages/Builder'
 import MyApps from '@/pages/MyApps'
+import AdminUpload from '@/pages/AdminUpload'
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -38,6 +39,7 @@ const AuthenticatedApp = () => {
         <Route path="/" element={<Home />} />
         <Route path="/builder" element={<Builder />} />
         <Route path="/my-apps" element={<MyApps />} />
+        <Route path="/admin-upload" element={<AdminUpload />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
