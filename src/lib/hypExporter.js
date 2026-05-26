@@ -656,11 +656,10 @@ export async function sha256HexSync(buffer) {
 
 /**
  * Legacy export for compatibility - use prepareHypData instead.
- * @deprecated Use prepareHypData() for client-side assembly
+ * @deprecated Use prepareHypData() for client-side assembly instead
  */
 export function buildHypFile(opts) {
   console.warn('[buildHypFile] Deprecated: use prepareHypData() and client-side assembly instead')
-  // Return a mock structure to avoid breaking imports
   return prepareHypData({
     name: opts.name,
     description: opts.description,
@@ -668,4 +667,82 @@ export function buildHypFile(opts) {
     script: opts.customScript || '',
     effectParams: opts.effectParams || {},
   })
+}
+
+/**
+ * BINARY INJECTION STRATEGY
+ * Uses a known-good .hyp file as a mould and injects a new JS script into it.
+ * This preserves the original GLB model, PNG image, and binary structure exactly.
+ *
+ * The template file must be placed at: /public/assets/templates/fonctionne.hyp
+ *
+ * @param {string} nouveauCodeJS - The new JavaScript code to inject
+ * @param {string} [filename] - Output filename (default: export_application.hyp)
+ * @returns {Promise<boolean>} - true on success, throws on failure
+ */
+export async function exportViaInjection(nouveauCodeJS, filename = 'export_application.hyp') {
+  // 1. Load the template mould from static assets
+  const response = await fetch('/assets/templates/fonctionne.hyp')
+  if (!response.ok) throw new Error(`Impossible de charger le fichier moule : ${response.status} ${response.statusText}`)
+  const buffer = await response.arrayBuffer()
+  const dataView = new DataView(buffer)
+
+  // 2. Read the JSON size from the first 4 bytes (uint32 LE)
+  const jsonSize = dataView.getUint32(0, true)
+
+  // 3. Extract and parse the JSON header
+  const jsonBytes = new Uint8Array(buffer, 4, jsonSize)
+  const jsonString = new TextDecoder().decode(jsonBytes)
+  const blueprint = JSON.parse(jsonString)
+
+  // 4. Critical fix: disable blocking physics collision
+  if (!blueprint.props) blueprint.props = {}
+  blueprint.props.collision = false
+
+  // 5. Get original asset sizes
+  const sizeModeleGLB = blueprint.assets[0].size
+  const sizeAncienJS = blueprint.assets[1].size
+  const sizeImagePNG = blueprint.assets[2].size
+
+  // 6. Isolate the immutable GLB and PNG binary payloads
+  const modeleBytes = new Uint8Array(buffer, 4 + jsonSize, sizeModeleGLB)
+  const imageBytes = new Uint8Array(buffer, 4 + jsonSize + sizeModeleGLB + sizeAncienJS, sizeImagePNG)
+
+  // 7. Patch and encode the new JS script
+  let patchedJS = patchScript(nouveauCodeJS.trim())
+  patchedJS = ensureIsClientGuard(patchedJS)
+  const encoder = new TextEncoder()
+  const nouveauJSBytes = encoder.encode(patchedJS)
+
+  // 8. Update the JSON manifest with the new script size
+  blueprint.assets[1].size = nouveauJSBytes.length
+  const nouveauJsonBytes = encoder.encode(JSON.stringify(blueprint))
+
+  // 9. Build the new 4-byte header
+  const headerBytes = new Uint8Array(4)
+  new DataView(headerBytes.buffer).setUint32(0, nouveauJsonBytes.length, true)
+
+  // 10. Assemble the final binary: [4B header][JSON][GLB][new JS][PNG]
+  const tailleTotale = 4 + nouveauJsonBytes.length + sizeModeleGLB + nouveauJSBytes.length + sizeImagePNG
+  const finalBytes = new Uint8Array(tailleTotale)
+
+  let offset = 0
+  finalBytes.set(headerBytes, offset); offset += 4
+  finalBytes.set(nouveauJsonBytes, offset); offset += nouveauJsonBytes.length
+  finalBytes.set(modeleBytes, offset); offset += sizeModeleGLB
+  finalBytes.set(nouveauJSBytes, offset); offset += nouveauJSBytes.length
+  finalBytes.set(imageBytes, offset)
+
+  // 11. Trigger browser download
+  const blob = new Blob([finalBytes], { type: 'application/octet-stream' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+
+  return true
 }

@@ -13,7 +13,7 @@ import PropsEditor from '@/components/builder/PropsEditor'
 import ScriptVisualizer from '@/components/builder/ScriptVisualizer'
 import HypAnalyzer from '@/components/builder/HypAnalyzer'
 
-import { buildHypFile, downloadFile, getPatchedScript } from '@/lib/hypExporter'
+import { downloadFile, getPatchedScript, exportViaInjection } from '@/lib/hypExporter'
 import { getAnonymousId } from '@/lib/anonymousId'
 
 function Section({ step, title, icon: Icon, children, badge }) {
@@ -107,7 +107,7 @@ export default function Builder() {
     setPropsValues(props) // initialize with defaults
   }
 
-  // Build .hyp entirely client-side (avoids binary corruption over network)
+  // Export .hyp using binary injection into the template mould
   const buildAndExport = async () => {
     if (!canExport) {
       toast.error('Remplis le nom et génère un script avant d\'exporter.')
@@ -115,74 +115,8 @@ export default function Builder() {
     }
     setBusy(true)
     try {
-      // Upload model first if exists
-      let modelFileUrl = null
-      if (modelFile) {
-        const modelRes = await base44.integrations.Core.UploadFile({ file: modelFile })
-        modelFileUrl = modelRes.file_url
-      }
-
-      // Call backend function to get blueprint + script (NO binary)
-      const result = await base44.functions.invoke('exportHypFile', {
-        name: meta.name,
-        description: meta.description,
-        author: meta.author,
-        modelFileUrl,
-        script,
-        effectParams: propsSchema,
-      })
-
-      if (!result.data?.success) {
-        throw new Error(result.data?.error || 'Erreur inconnue')
-      }
-
-      const { blueprint, assets, script: patchedScript, filename } = result.data
-
-      // Client-side .hyp assembly (preserves UTF-8 and 4-byte header)
-      const encoder = new TextEncoder()
-      
-      // Encode script
-      const scriptBytes = encoder.encode(patchedScript)
-      
-      // Update asset size
-      const assetsWithSizes = assets.map(a => ({
-        ...a,
-        size: a.type === 'script' ? scriptBytes.length : a.size,
-      }))
-
-      // Build header JSON
-      const header = {
-        blueprint,
-        assets: assetsWithSizes,
-      }
-      const jsonBytes = encoder.encode(JSON.stringify(header))
-
-      // 4-byte header (uint32 LE)
-      const headerSizeBytes = new Uint8Array(4)
-      new DataView(headerSizeBytes.buffer).setUint32(0, jsonBytes.length, true)
-
-      // Assemble: [4-byte size][JSON][script bytes]
-      const totalLength = headerSizeBytes.length + jsonBytes.length + scriptBytes.length
-      const finalBytes = new Uint8Array(totalLength)
-      
-      let offset = 0
-      finalBytes.set(headerSizeBytes, offset)
-      offset += headerSizeBytes.length
-      finalBytes.set(jsonBytes, offset)
-      offset += jsonBytes.length
-      finalBytes.set(scriptBytes, offset)
-
-      // Download
-      const blob = new Blob([finalBytes], { type: 'application/octet-stream' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
+      const filename = `${meta.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'app'}.hyp`
+      await exportViaInjection(script, filename)
       toast.success(`${filename} exporté !`)
     } catch (e) {
       console.error(e)
