@@ -693,16 +693,20 @@ export async function exportViaInjection(nouveauCodeJS, filename = 'export_appli
   // 3. Extract and parse the JSON header
   const jsonBytes = new Uint8Array(buffer, 4, jsonSize)
   const jsonString = new TextDecoder().decode(jsonBytes)
-  const blueprint = JSON.parse(jsonString)
+  const parsed = JSON.parse(jsonString)
+
+  // parsed = { blueprint: {...}, assets: [...] }
+  const blueprintObj = parsed.blueprint
+  const assets = parsed.assets
 
   // 4. Critical fix: disable blocking physics collision
-  if (!blueprint.props) blueprint.props = {}
-  blueprint.props.collision = false
+  if (!blueprintObj.props) blueprintObj.props = {}
+  blueprintObj.props.collision = false
 
   // 5. Get original asset sizes
-  const sizeModeleGLB = blueprint.assets[0].size
-  const sizeAncienJS = blueprint.assets[1].size
-  const sizeImagePNG = blueprint.assets[2].size
+  const sizeModeleGLB = assets[0].size
+  const sizeAncienJS = assets[1].size
+  const sizeImagePNG = assets[2].size
 
   // 6. Isolate the immutable GLB and PNG binary payloads
   const modeleBytes = new Uint8Array(buffer, 4 + jsonSize, sizeModeleGLB)
@@ -715,8 +719,8 @@ export async function exportViaInjection(nouveauCodeJS, filename = 'export_appli
   const nouveauJSBytes = encoder.encode(patchedJS)
 
   // 8. Update the JSON manifest with the new script size
-  blueprint.assets[1].size = nouveauJSBytes.length
-  const nouveauJsonBytes = encoder.encode(JSON.stringify(blueprint))
+  assets[1].size = nouveauJSBytes.length
+  const nouveauJsonBytes = encoder.encode(JSON.stringify({ blueprint: blueprintObj, assets }))
 
   // 9. Build the new 4-byte header
   const headerBytes = new Uint8Array(4)
