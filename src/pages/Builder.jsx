@@ -185,21 +185,6 @@ export default function Builder() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" onClick={() => setShowAnalyzer(true)}>
-            <FileSearch className="w-4 h-4 mr-2" />
-            Analyser .hyp
-          </Button>
-          <Button variant="outline" onClick={() => {
-            const patched = getPatchedScript(script)
-            setPatchedScript(patched)
-            // Debug: check for orphan braces
-            const lines = patched.split('\n')
-            const lastNonEmpty = lines.map(l => l.trim()).filter(l => l).slice(-5)
-            console.log('✅ Script patché - 5 dernières lignes non-vides:', lastNonEmpty)
-          }} disabled={script === EMPTY_SCRIPT} title="Voir le script après patch (ce qui sera dans le .hyp)">
-            <Bug className="w-4 h-4 mr-2" />
-            Script patché
-          </Button>
           <Button variant="outline" onClick={exportJson} disabled={!canExport}>
             <FileJson className="w-4 h-4 mr-2" />
             Exporter .json
