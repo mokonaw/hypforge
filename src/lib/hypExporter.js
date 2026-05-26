@@ -681,8 +681,8 @@ export function buildHypFile(opts) {
  * @returns {Promise<boolean>} - true on success, throws on failure
  */
 export async function exportViaInjection(nouveauCodeJS, filename = 'export_application.hyp') {
-  // 1. Load the template mould from static assets
-  const response = await fetch('/assets/templates/fonctionne.hyp')
+  // 1. Load the template mould from the uploaded file URL
+  const response = await fetch('https://base44.app/api/apps/69ea64ec2a2946b1244fd941/files/mp/public/69ea64ec2a2946b1244fd941/22348c423_fonctionne.hyp')
   if (!response.ok) throw new Error(`Impossible de charger le fichier moule : ${response.status} ${response.statusText}`)
   const buffer = await response.arrayBuffer()
   const dataView = new DataView(buffer)
