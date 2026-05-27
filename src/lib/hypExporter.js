@@ -119,20 +119,7 @@ function patchScript(scriptSource) {
   // === MINIMAL PATCHING ONLY ===
   // The script is preserved as-is. Only fix CRITICAL bugs that crash Hyperfy at import.
 
-  // 1. Replace app.create('image') — doesn't exist in Hyperfy V2, will crash
-  scriptSource = scriptSource.replace(/app\.create\(\s*['"]image['"]\s*\)/g, "app.create('webview')")
-
-  // 2. Remove .fit property (not valid on webview)
-  scriptSource = scriptSource.replace(/\b\w+\.fit\s*=\s*[^\n]+\n?/g, '')
-
-  // 3. Remove app.on('update'/'fixedUpdate') — these don't exist in Hyperfy V2, will crash
-  scriptSource = removeAppOnBlocks(scriptSource, 'update')
-  scriptSource = removeAppOnBlocks(scriptSource, 'fixedUpdate')
-
-  // 4. Replace world.getPlayer() — doesn't exist in Hyperfy V2
-  scriptSource = scriptSource.replace(/world\.getPlayer\(\s*\)/g, 'null')
-  
-  // 5. Replace world.entities.getLocalPlayer() — doesn't exist in Hyperfy V2
+  // 1. Replace world.entities.getLocalPlayer() — doesn't exist in Hyperfy V2
   scriptSource = scriptSource.replace(/world\.entities\.getLocalPlayer\(\s*\)/g, 'null')
 
   // 6. Fix prim added to app instead of holder (rare case)
@@ -447,41 +434,17 @@ function removeFunctionDef(src, name) {
 }
 
 /**
- * Ensure script structure is valid for Hyperfy.
- * KEEP `if (!world.isClient) return` and `app.keepActive = true` - they are required!
- * Only remove broken `if (world.isClient) { ... }` wrappers around app.configure().
+ * Clean up script structure for Hyperfy.
+ * Preserves ALL valid Hyperfy patterns including:
+ * - if (!world.isClient) return  — early exit guard
+ * - if (world.isClient) { ... }  — valid mixed server/client block
+ * - if (world.isServer) { ... }  — valid server block
+ * Only removes leading blank lines.
  */
 function ensureIsClientGuard(scriptSource) {
-  // Only remove `if (world.isClient) {` wrappers (NOT the `if (!world.isClient) return` pattern)
-  let result = scriptSource
-  const wrapperPattern = /if\s*\(\s*world\.isClient\s*\)\s*\{/g
-  let match
-  while ((match = wrapperPattern.exec(result)) !== null) {
-    const start = match.index
-    // Find matching closing brace
-    let depth = 0
-    let i = start
-    let foundOpen = false
-    while (i < result.length) {
-      if (result[i] === '{') { depth++; foundOpen = true }
-      else if (result[i] === '}') { depth-- }
-      if (foundOpen && depth === 0) {
-        // Remove the `if (world.isClient) {` line and this closing brace
-        const lineStart = result.lastIndexOf('\n', start) + 1
-        let end = i + 1
-        while (end < result.length && (result[end] === '\n' || result[end] === '\r')) end++
-        result = result.slice(0, lineStart) + result.slice(end)
-        wrapperPattern.lastIndex = 0
-        break
-      }
-      i++
-    }
-  }
-
   // Remove leading blank lines only
-  const lines = result.split('\n')
+  const lines = scriptSource.split('\n')
   while (lines.length > 0 && lines[0].trim() === '') lines.shift()
-
   return lines.join('\n')
 }
 
