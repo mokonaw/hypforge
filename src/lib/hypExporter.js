@@ -145,10 +145,7 @@ function patchScript(scriptSource) {
     scriptSource = scriptSource.replace(re, '')
   }
 
-  // 8. CRITICAL: Hyperfy V2 uses `props`, NOT `config` — replace all occurrences
-  scriptSource = scriptSource.replace(/\bconfig\./g, 'props.')
-
-  // 9. Fix app.on('config', ...) → props.onChange pattern
+  // Fix app.on('config', ...) → props.onChange pattern (only this specific pattern, not general config. replacement)
   scriptSource = scriptSource.replace(/app\.on\(\s*['"]config['"]\s*,\s*\(\)\s*=>\s*\{\s*applyAll\(\)\s*\}\s*\)/g, 'if (props && typeof props.onChange === \'function\') { props.onChange(() => { applyAll() }) }')
 
   // ✅ EVERYTHING ELSE IS PRESERVED EXACTLY AS-IS
