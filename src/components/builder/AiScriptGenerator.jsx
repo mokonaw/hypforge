@@ -9,15 +9,14 @@ Hyperfy est un moteur de monde virtuel 3D. Les apps Hyperfy sont des scripts Jav
 
 === RÈGLES STRICTES DU RUNTIME HYPERFY V2 ===
 
-GLOBALS DISPONIBLES : app, world, config, fetch, num, str, uuid, setTimeout, clearTimeout
+GLOBALS DISPONIBLES : app, world, props, fetch, num, str, uuid, setTimeout, clearTimeout
 
-CRITIQUE : L'objet de configuration s'appelle config, PAS props.
-- Lire les valeurs avec config.monChamp (ex: config.url, config.width)
-- JAMAIS utiliser props.xxx ou props.onChange — ça n'existe pas dans Hyperfy
+CRITIQUE : L'objet de configuration s'appelle props, PAS config.
+- Lire les valeurs avec props.monChamp (ex: props.url, props.width)
+- JAMAIS utiliser config.xxx — ça n'existe pas dans Hyperfy côté script
+- Pour écouter les changements de props : if (props && typeof props.onChange === 'function') { props.onChange(() => applyAll()) }
 
 ⚠️ IMPORTANT : setInterval N'EXISTE PAS dans Hyperfy V2.
-⚠️ CRITIQUE : app.on('update', ...) N'EXISTE PAS et CRASHE l'import — NE JAMAIS UTILISER.
-⚠️ CRITIQUE : world.getPlayer() N'EXISTE PAS et CRASHE — NE JAMAIS UTILISER.
 
 --- app ---
   app.position.set(x, y, z) — ou app.position.x = ...
@@ -29,12 +28,14 @@ CRITIQUE : L'objet de configuration s'appelle config, PAS props.
   app.keepActive = true — empêche l'app de se désactiver quand hors champ (utile pour webview, audio, etc.)
   app.configure([...fields]) — déclare les champs éditables dans l'UI Hyperfy (TOUJOURS en premier dans le script)
   app.onDispose = () => {...} — nettoyage quand l'app est détruite (supprimer DOM, nodes, etc.)
+  app.on('update', dt => {...}) — boucle de rendu, appelée à chaque frame (dt = delta time en secondes). ✅ FONCTIONNE et est le seul moyen de faire de la logique temps-réel (proximité, animations, etc.)
+  app.on('fixedUpdate', dt => {...}) — boucle physique fixe. ✅ FONCTIONNE.
 
---- config ---
-  config = valeurs des champs définis par app.configure()
-  Lire avec config.monChamp (ex: config.url, config.width)
+--- props ---
+  props = valeurs des champs définis par app.configure()
+  Lire avec props.monChamp (ex: props.url, props.width)
   JAMAIS de déstructuration
-  Pour écouter les changements : app.on('config', () => applyAll())
+  Pour écouter les changements : if (props && typeof props.onChange === 'function') { props.onChange(() => applyAll()) }
 
 --- world ---
   world.isClient — boolean, true si exécuté côté navigateur
@@ -48,6 +49,7 @@ CRITIQUE : L'objet de configuration s'appelle config, PAS props.
   world.on('chat', msg => {...}) — écoute les messages du chat monde (serveur) ; msg = { id, from, fromId, body, createdAt }
   world.chat(msg, broadcast) — envoie un message dans le chat monde (serveur) ; msg = { id, from, fromId, body, createdAt }, broadcast = true pour tous
   world.getTimestamp() — timestamp monde actuel (number)
+  world.getPlayer() — ✅ FONCTIONNE côté client. Retourne l'objet joueur local avec { position: {x,y,z}, ... } ou null si pas encore chargé. Toujours vérifier : const player = world.getPlayer(); if (!player) return;
 
 --- app (propriétés supplémentaires) ---
   app.isMoving — boolean, true si le joueur est en train de déplacer l'app (utile dans onPointerDown)
@@ -79,9 +81,9 @@ CRITIQUE : L'objet de configuration s'appelle config, PAS props.
     }
     const target = findFirstMesh(app)
 
---- config.file — asset uploadé ---
-  config.file?.url — URL de l'asset uploadé (string ou undefined)
-  Toujours vérifier : const fileUrl = config.file?.url ? String(config.file.url).trim() : ''
+--- props.file — asset uploadé ---
+  props.file?.url — URL de l'asset uploadé (string ou undefined)
+  Toujours vérifier : const fileUrl = props.file?.url ? String(props.file.url).trim() : ''
 
 === NODES DISPONIBLES via app.create('nom') ===
 
@@ -98,11 +100,12 @@ CRITIQUE : L'objet de configuration s'appelle config, PAS props.
   ❌ Ne pas créer si src est vide — provoque une erreur engine
 
 --- 'prim' — primitif 3D avec matériau (remplace 'mesh') ---
-  Créer: app.create('prim') SANS second argument
-  Puis configurer : prim.type = 'box', prim.scale.set(w,h,d), prim.position.set(x,y,z), prim.color = '#111111', etc.
-  ⚠️ JAMAIS passer d'objet de config à app.create('prim', {...}) — syntaxe non supportée
+  Créer: app.create('prim', { type: 'box', scale: [w,h,d], position: [x,y,z], color: '#111111', castShadow: false, receiveShadow: false })
+  ✅ La syntaxe avec objet de config en second argument est supportée et recommandée.
   .color (string hex) — modifiable après création
   .visible (boolean)
+  .scale.set(w,h,d) — modifiable après création
+  .position.set(x,y,z) — modifiable après création
   app.add(prim) ou holder.add(prim) selon la hiérarchie souhaitée
   ⚠️ HIÉRARCHIE : si tu crées un group (holder), TOUS les nœuds enfants doivent être ajoutés via holder.add(), jamais via app.add() directement
 
@@ -132,7 +135,7 @@ CRITIQUE : L'objet de configuration s'appelle config, PAS props.
 
 --- 'uiimage' — image dans un 'ui' ---
   Créer: app.create('uiimage', { src: 'https://...', width: 240, height: 148, objectFit: 'contain', borderRadius: 8 })
-  Pour les assets uploadés: src = props.imageFile.url.replace('asset://', '/assets/')
+  Pour les assets uploadés: src = props.imageFile.url
 
 --- 'video' — écran vidéo 3D (MP4 direct uniquement) ---
   .src (string, URL MP4 directe — PAS YouTube embed)
@@ -218,7 +221,6 @@ CRITIQUE : L'objet de configuration s'appelle config, PAS props.
 --- app (propriétés avancées) ---
   app.instanceId — identifiant unique de l'instance de l'app dans le monde
   app.state — objet d'état partagé côté serveur, accessible côté client via app.state
-  app.config — alias de props (lire les champs configurables depuis le serveur aussi)
 
 === CHAMPS app.configure() ===
 Types disponibles :
@@ -253,14 +255,16 @@ Types disponibles :
   uitext.textShadow = '0 0 10px #color'
   uitext.letterSpacing = '2px'
 
-=== PATTERN RECOMMANDÉ — applyAll avec config ===
-// Toujours structurer le script avec des fonctions apply* appelées au init ET sur changement de config
+=== PATTERN RECOMMANDÉ — applyAll avec props ===
+// Toujours structurer le script avec des fonctions apply* appelées au init ET sur changement de props
 function applyAll() {
   // recalcule et applique toutes les dimensions, positions, visibilités
 }
 applyAll()
-// Écouter les changements de config (optionnel, selon la version Hyperfy)
-// app.on('config', () => applyAll())
+// Écouter les changements de props
+if (props && typeof props.onChange === 'function') {
+  props.onChange(() => applyAll())
+}
 
 === EMBED YOUTUBE / TWITCH — règles critiques ===
 ⚠️ YouTube REQUIERT &muted=1 dans l'URL embed sinon la politique autoplay des navigateurs bloque la vidéo (son audible mais image noire/figée).
@@ -282,165 +286,90 @@ function buildEmbedUrl(rawUrl, autoplay) {
   return url
 }
 
-=== EXEMPLE COMPLET — webview avec proximité (COPY-COLLER CE TEMPLATE) ===
+=== PATTERN DE PROXIMITÉ — app.on('update') + world.getPlayer() ✅ ===
+
+✅ app.on('update', dt => {...}) FONCTIONNE dans Hyperfy V2 — c'est le seul moyen fiable de détecter la distance joueur.
+✅ world.getPlayer() FONCTIONNE côté client — retourne le joueur local avec sa position.
+
+PATTERN RECOMMANDÉ pour activer un webview/effet à la proximité du joueur :
+
+// GUARD : ne s'exécute que côté client
 if (!world.isClient) return
 app.keepActive = true
 
 app.configure([
-  { type: 'text', key: 'url', label: 'URL du site', initial: '' },
-  { type: 'number', key: 'width', label: 'Largeur (m)', initial: 3 },
-  { type: 'number', key: 'factor', label: 'Résolution', initial: 150 },
-  { type: 'number', key: 'proximityDistance', label: 'Distance proximité (m)', initial: 4 },
-  { type: 'toggle', key: 'autoplay', label: 'Lecture auto', trueLabel: 'Oui', falseLabel: 'Non', initial: false },
+  { type: 'text', key: 'src', label: 'URL', initial: '' },
+  { type: 'number', key: 'width', label: 'Largeur (m)', initial: 3, dp: 2, step: 0.1 },
 ])
+
+const ACTIVATION_DISTANCE = 8  // mètres — peut être mis en prop configurable
 
 const holder = app.create('group')
 app.add(holder)
 
 let webview = null
-let screenshotView = null
-let proximityAction = null
-let leaveAction = null
-let isNear = false
-let audioNode = null
+let isActive = false
 
-function getFileUrl(val) {
-  try {
-    if (!val) return ''
-    if (typeof val === 'string') return val.trim()
-    if (val.url) return String(val.url).trim()
-  } catch(e) {}
-  return ''
-}
-
-function buildEmbedUrl(rawUrl, autoplay) {
-  const url = String(rawUrl || '').trim()
-  if (!url) return ''
-  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/)
-  if (ytMatch) return 'https://www.youtube.com/embed/' + ytMatch[1] + '?autoplay=' + (autoplay ? '1' : '0') + '&muted=1&rel=0'
-  const twitchChannel = url.match(/twitch\.tv\/([A-Za-z0-9_]+)$/)
-  if (twitchChannel) return 'https://player.twitch.tv/?channel=' + twitchChannel[1] + '&parent=hyperfy.io'
-  const twitchVod = url.match(/twitch\.tv\/videos\/([0-9]+)/)
-  if (twitchVod) return 'https://player.twitch.tv/?video=' + twitchVod[1] + '&parent=hyperfy.io'
-  return url
-}
-
-function getConfig() {
-  const W = Math.max(0.1, Number(config.width ?? 3))
-  const aspect = 1.7778
-  const H = W / aspect
-  const factor = Math.min(800, Math.max(50, Number(config.factor ?? 150)))
-  const proxDist = Math.max(1, Number(config.proximityDistance ?? 4))
-  const autoplay = !!config.autoplay
-  const rawUrl = getFileUrl(config.url)
-  const embedUrl = buildEmbedUrl(rawUrl, autoplay)
-  return { W, H, factor, proxDist, autoplay, rawUrl, embedUrl }
-}
-
-function showWebview() {
-  const { W, H, factor, embedUrl } = getConfig()
-  if (!embedUrl) { showScreenshot(); return }
-  if (screenshotView) screenshotView.active = false
-  if (!webview) { webview = app.create('webview'); holder.add(webview) }
-  webview.space = 'world'
-  webview.src = embedUrl
-  webview.width = W
-  webview.height = H
-  webview.factor = factor
-  webview.doubleside = true
-  webview.active = true
-}
-
-function showScreenshot() {
-  const { W, H } = getConfig()
-  if (webview) { holder.remove(webview); webview = null }
-  if (!screenshotView) {
-    screenshotView = app.create('prim')
-    screenshotView.type = 'box'
-    screenshotView.scale.set(W, H, 0.02)
-    screenshotView.color = '#333333'
-    holder.add(screenshotView)
-  }
-  if (screenshotView) screenshotView.active = true
-}
-
-function updateAudioVolume() {
-  if (!audioNode) return
-  if (isNear) { audioNode.volume = 1 } else { audioNode.volume = 0 }
-}
-
-function setupProximityActions() {
-  if (proximityAction) { app.remove(proximityAction); proximityAction = null }
-  if (leaveAction) { app.remove(leaveAction); leaveAction = null }
-  const { proxDist, embedUrl } = getConfig()
-  if (!embedUrl) return
-  proximityAction = app.create('action')
-  proximityAction.label = 'Afficher le site'
-  proximityAction.distance = proxDist
-  proximityAction.duration = 0
-  proximityAction.position.set(0, getConfig().H / 2, 0)
-  proximityAction.onTrigger = () => {
-    if (!isNear) {
-      isNear = true
-      showWebview()
-      updateAudioVolume()
-      app.remove(proximityAction)
-      proximityAction = null
-      setupLeaveAction()
+function applyWebViewState() {
+  const src = String(props.src || '').trim()
+  if (isActive && src) {
+    if (!webview) {
+      webview = app.create('webview')
+      holder.add(webview)
+    }
+    webview.space = 'world'
+    webview.src = src
+    webview.width = Math.max(0.1, Number(props.width ?? 3))
+    webview.height = webview.width / (16/9)
+    webview.factor = 150
+    webview.doubleside = true
+  } else {
+    if (webview) {
+      try { holder.remove(webview) } catch {}
+      webview = null
     }
   }
-  app.add(proximityAction)
-}
-
-function setupLeaveAction() {
-  if (proximityAction) { app.remove(proximityAction); proximityAction = null }
-  if (leaveAction) { app.remove(leaveAction); leaveAction = null }
-  leaveAction = app.create('action')
-  leaveAction.label = 'Masquer'
-  leaveAction.distance = 2
-  leaveAction.duration = 0
-  leaveAction.position.set(0, getConfig().H / 2, 0)
-  leaveAction.onTrigger = () => {
-    if (isNear) {
-      isNear = false
-      showScreenshot()
-      updateAudioVolume()
-      app.remove(leaveAction)
-      leaveAction = null
-      setupProximityActions()
-    }
-  }
-  app.add(leaveAction)
 }
 
 function applyAll() {
-  const { embedUrl } = getConfig()
-  if (isNear) {
-    showWebview()
-  } else {
-    showScreenshot()
-  }
-  if (embedUrl && !proximityAction && !leaveAction) setupProximityActions()
+  applyWebViewState()
 }
 
-applyAll()
-app.on('config', () => {
-  isNear = false
-  applyAll()
+// Boucle de proximité — s'exécute à chaque frame
+app.on('update', dt => {
+  const player = world.getPlayer()
+  if (!player) return
+
+  const dx = player.position.x - app.position.x
+  const dy = player.position.y - app.position.y
+  const dz = player.position.z - app.position.z
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+
+  const shouldBeActive = dist <= ACTIVATION_DISTANCE
+  if (shouldBeActive !== isActive) {
+    isActive = shouldBeActive
+    applyWebViewState()
+  }
 })
 
-⛔ NE PAS UTILISER app.on('update') — N'EXISTE PAS dans Hyperfy V2, CRASHE À L'IMPORT.
-⛔ NE PAS UTILISER world.getPlayer() / world.entities.getLocalPlayer() — N'EXISTE PAS dans Hyperfy V2, CRASHE.
+applyAll()
+if (props && typeof props.onChange === 'function') {
+  props.onChange(() => {
+    isActive = false
+    applyAll()
+  })
+}
 
-✅ LOGIQUE DE PROXIMITÉ — REQUIERT CES VARIABLES ET FONCTIONS :
-  - let isNear = false (déclaration OBLIGATOIRE)
-  - let proximityAction = null (déclaration OBLIGATOIRE)
-  - function getConfig() { ... const proxDist = ...; return { proxDist, ... } } (proxDist DOIT être défini)
-  - function showWebview() { ... } (OBLIGATOIRE si utilisé dans applyAll/onTrigger)
-  - function setupProximityActions() { ... proximityAction = app.create('action') ... } (corps COMPLET requis)
-  - function setupLeaveAction() { ... leaveAction = app.create('action') ... } (corps COMPLET requis)
-  - function updateAudioVolume() { if (isNear) { ... } else { ... } } (if/else COMPLET requis)
-  - app.on('config', () => { isNear = false; applyAll() }) (reset isNear OBLIGATOIRE)
+app.onDispose = () => {
+  try { app.remove(holder) } catch {}
+}
+
+=== RÈGLES PROXIMITÉ ===
+  ✅ Utiliser app.on('update', dt => { const player = world.getPlayer(); if (!player) return; ... }) pour la proximité
+  ✅ Calculer la distance manuellement : Math.sqrt(dx*dx + dy*dy + dz*dz)
+  ✅ Comparer dist <= ACTIVATION_DISTANCE et ne réagir que si l'état change (shouldBeActive !== isActive)
+  ✅ world.getPlayer() peut retourner null au démarrage — TOUJOURS vérifier avant d'accéder à .position
+  ❌ NE PAS utiliser les 'action' pour la proximité — les actions nécessitent un clic manuel du joueur, elles ne se déclenchent pas automatiquement à la distance
 
 === CE QUI N'EXISTE PAS — NE JAMAIS UTILISER ===
   ❌ setInterval / clearInterval — N'EXISTENT PAS, utiliser app.on('update')
@@ -451,10 +380,10 @@ app.on('config', () => {
   ❌ app.traverse()
   ❌ world.open() sans vérifier world.isClient
   ❌ document.createElement() — utiliser 'webview' à la place
-  ❌ .scale.set() ou .position.set() sur un prim avant holder.add() — passer scale/position dans la config initiale
   ❌ app.add(node) si node appartient à un holder/group — utiliser holder.add(node)
   ❌ app.get('Block') sans try/catch — et NE JAMAIS ajouter cette ligne si aucun modèle GLB n'est utilisé
-  ❌ Déclarer des variables (isNear, lastDist, proximityDistance) liées à une boucle update qui n'existe pas — code mort incohérent
+  ❌ world.entities.getLocalPlayer() — utiliser world.getPlayer() à la place
+  ❌ config.xxx — utiliser props.xxx
 
 === RÈGLES DE GÉNÉRATION ===
 - Code JavaScript brut uniquement. Zéro markdown, zéro \`\`\`, zéro explication.
@@ -467,7 +396,7 @@ app.on('config', () => {
 - Utiliser app.onDispose pour nettoyer les nodes et effets de bord.
 - N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne.
 - JAMAIS écrire if (condition) { ... return } else { ... } — le else est du code mort après un return.
-- TOUJOURS utiliser config.xxx pour lire les valeurs configurables, JAMAIS props.xxx.
+- TOUJOURS utiliser props.xxx pour lire les valeurs configurables, JAMAIS config.xxx.
 - JAMAIS wrapper app.configure() dans un if — doit être au top-level.
 - if (!world.isClient) return — OK en première ligne pour sortir tôt (optionnel).
 - app.keepActive = true — après le guard si utilisé.
@@ -487,16 +416,15 @@ app.on('config', () => {
 - RÈGLES ABSOLUES pour la hiérarchie des nœuds :
   1. Un nœud enfant d'un group/holder NE DOIT PAS avoir app.add() — utiliser SEULEMENT holder.add(). app.add() et holder.add() sur le même nœud = double attach = CRASH.
      Exemple CORRECT :
-       screenshotView = app.create('prim', { type: 'box', scale: [W, H, 0.02], ... })
+       screenshotView = app.create('prim', { type: 'box', scale: [W, H, 0.02], color: '#333' })
        holder.add(screenshotView)   // ← SEULEMENT holder.add(), jamais app.add() sur un enfant de holder
      Exemple INCORRECT (crash) :
        screenshotView = app.create('prim', { ... })
        app.add(screenshotView)      // ← NE PAS FAIRE si le nœud va dans holder
        holder.add(screenshotView)
   2. app.add() est réservé aux nœuds de premier niveau (holder/group, actions, rigidbody, audio...) — jamais sur leurs enfants
-  3. Les prim doivent avoir scale et position dans leur config initiale, pas via .scale.set() après
-  4. Ne jamais ajouter de props dans app.configure() pour des fonctionnalités qui ne sont pas implémentées dans le script (ex: proximityDistance sans boucle update)
-  5. app.keepActive = true se place TOUJOURS juste après if (!world.isClient) return, avant app.configure()`
+  3. app.keepActive = true se place TOUJOURS juste après if (!world.isClient) return, avant app.configure()
+  4. Pour la proximité : utiliser app.on('update') + world.getPlayer(), JAMAIS les 'action' qui nécessitent un clic manuel`
 
 export default function AiScriptGenerator({ onScriptGenerated, onPropsGenerated, prompt, onPromptChange }) {
   const [loading, setLoading] = useState(false)
@@ -516,7 +444,7 @@ ${prompt}
 
 Génère le script Hyperfy index.js complet.
 - Utilise app.configure([...]) pour déclarer les champs configurables (URL, vitesse, etc.)
-- Lis les valeurs avec config.xxx (JAMAIS props.xxx)
+- Lis les valeurs avec props.xxx (JAMAIS config.xxx)
 - Si des champs configurables existent, ajoute aussi en première ligne : // PROPS: {"key": "defaultValue"} (pour l'UI du builder)
 - N'utilise QUE les nodes et APIs documentés ci-dessus.
 - Code JavaScript brut uniquement, aucun markdown.`,
