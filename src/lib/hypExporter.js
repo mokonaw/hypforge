@@ -127,9 +127,6 @@ function patchScript(scriptSource) {
   scriptSource = scriptSource.replace(/\bapp\.remove\(placeholderPane\)/g, 'holder.remove(placeholderPane)')
 
   // 7. CRITICAL: Fix double-attach crashes (node added to both app AND holder)
-  // IMPORTANT: Skip 'holder', 'rb', 'rigidbody' — these are top-level nodes legitimately added to app
-  // AND used as parents for other nodes (holder.add(...), rb.add(...))
-  const TOP_LEVEL_NODES = new Set(['holder', 'rb', 'rigidbody', 'group'])
   const holderAdded = new Set()
   const holderAddPattern = /\b(?:\w+)\s*\.add\(\s*(\w+)\s*\)/g
   let hm
@@ -141,7 +138,6 @@ function patchScript(scriptSource) {
   let am
   while ((am = appAddPattern.exec(scriptSource)) !== null) appOnlyAdded.add(am[1])
   for (const varName of holderAdded) {
-    if (TOP_LEVEL_NODES.has(varName)) continue // never remove app.add(holder) etc.
     if (!appOnlyAdded.has(varName)) continue
     const nonAppRe = new RegExp(`\\b(?!app\\b)\\w+\\.add\\(\\s*${varName}\\s*\\)`)
     if (!nonAppRe.test(scriptSource)) continue
