@@ -194,6 +194,39 @@ CRITIQUE : L'objet de configuration s'appelle props, PAS config.
 
 --- 'anchor' / 'particles' / 'lod' — usages avancés ---
 
+--- GLB MODEL — masquage du modèle natif ---
+  Le modèle GLB embarqué dans le .hyp crée un nœud enfant accessible via app.get('NomDuNœud').
+  Pour masquer ce cube noir par défaut (qui apparaît tant que le webview n'est pas chargé) :
+
+  function findModelNode() {
+    return (
+      app.get('Block') ||
+      app.get('ID Block') ||
+      app.get('Model') ||
+      app.get('GLB') ||
+      app.get('Surface') ||
+      null
+    )
+  }
+
+  let modelNode = findModelNode()
+
+  function applyModelVisibility() {
+    if (!modelNode) modelNode = findModelNode()
+    if (!modelNode) return
+    try { modelNode.visible = !!props.modelVisible } catch {}
+    try { modelNode.active = true } catch {}
+  }
+
+  Et dans app.configure() ajouter :
+  { key: 'modelVisible', type: 'toggle', label: 'GLB Visible', initial: false }
+
+  ✅ modelNode.visible = false — masque le mesh GLB sans le supprimer
+  ✅ modelNode.active = true — maintient le node actif (évite les crashs)
+  ✅ findModelNode() essaie plusieurs noms courants (Block, Model, GLB…) — robuste
+  ✅ La visibilité est recalculée dans applyAll() via applyModelVisibility()
+  ⚠️ Ne PAS utiliser app.get() sans vérifier null — retourne null si le nœud n'existe pas
+
 --- CLONAGE de nodes ---
   node.clone(true) — clone un node et tous ses enfants (deep clone)
   Utile pour dupliquer un template GLB défini dans Blender :
@@ -394,7 +427,7 @@ app.onDispose = () => {
 - Pour ouvrir des liens : toujours vérifier world.isClient avant world.open().
 - Pour les webviews : NE PAS créer si src est vide.
 - Utiliser app.onDispose pour nettoyer les nodes et effets de bord.
-- N'ajouter la ligne app.get('Block') QUE si un modèle GLB est inclus dans le blueprint. Si l'app n'a pas de modèle GLB, NE PAS ajouter cette ligne.
+- Si l'app utilise un modèle GLB : utiliser findModelNode() (cherche Block, ID Block, Model, GLB, Surface…) pour masquer le cube noir par défaut. Ajouter { key: 'modelVisible', type: 'toggle', label: 'GLB Visible', initial: false } dans app.configure(), et appeler applyModelVisibility() dans applyAll(). Si l'app n'a PAS de modèle GLB, ne pas utiliser app.get() du tout.
 - JAMAIS écrire if (condition) { ... return } else { ... } — le else est du code mort après un return.
 - TOUJOURS utiliser props.xxx pour lire les valeurs configurables, JAMAIS config.xxx.
 - JAMAIS wrapper app.configure() dans un if — doit être au top-level.
